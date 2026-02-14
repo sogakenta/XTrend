@@ -1,6 +1,6 @@
 # XTrend 実装可能MVP仕様 v0.2
 
-最終更新: 2026-02-12
+最終更新: 2026-02-14
 
 ## 0. この文書の目的
 - 企画段階の曖昧さをなくし、実装担当（CC）がすぐ着手できる仕様に落とし込む。
@@ -154,6 +154,17 @@ CREATE TABLE ingest_run (
   error_summary TEXT
 );
 
+-- 地域別の取得結果を記録（部分失敗の検証・再実行判断用）
+CREATE TABLE ingest_run_place (
+  run_id UUID NOT NULL REFERENCES ingest_run(run_id) ON DELETE CASCADE,
+  woeid BIGINT NOT NULL REFERENCES place(woeid) ON DELETE RESTRICT,
+  status TEXT NOT NULL CHECK (status IN ('succeeded', 'failed')),
+  error_code TEXT,
+  error_message TEXT,
+  trend_count SMALLINT,
+  PRIMARY KEY (run_id, woeid)
+);
+
 CREATE TABLE trend_snapshot (
   snapshot_id BIGSERIAL PRIMARY KEY,
   run_id UUID NOT NULL REFERENCES ingest_run(run_id) ON DELETE RESTRICT,
@@ -161,12 +172,13 @@ CREATE TABLE trend_snapshot (
   woeid BIGINT NOT NULL REFERENCES place(woeid) ON DELETE RESTRICT,
   position SMALLINT NOT NULL CHECK (position BETWEEN 1 AND 50),
   term_id BIGINT NOT NULL REFERENCES term(term_id) ON DELETE RESTRICT,
-  tweet_count INT NULL,
+  tweet_count INT NULL,  -- ドキュメント記載あり、実際は返却されない場合があるためNULL許容
   raw_name TEXT NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  UNIQUE (captured_at, woeid, position),
-  UNIQUE (captured_at, woeid, term_id)
+  UNIQUE (captured_at, woeid, position)  -- UPSERTの正規キー
 );
+-- NOTE: (captured_at, woeid, term_id) の一意制約は削除。同一時刻に同一語が複数順位に出る可能性は低いが、
+--       UPSERT時の競合回避のため position ベースのみを採用。
 
 CREATE INDEX idx_snapshot_woeid_time_pos
   ON trend_snapshot (woeid, captured_at DESC, position);
@@ -202,7 +214,7 @@ INSERT INTO place (woeid, slug, name_ja, name_en) VALUES
 ### 5.2 処理フロー
 1. `ingest_run` を `running` で作成。
 2. `is_active = true` の `place` を取得。
-3. 各 `woeid` に対しX API呼び出し（最大50件）。
+3. 各 `woeid` に対しX API呼び出し（**常に `max_trends=50` を指定**）。
 4. `term` を `UPSERT`。
 5. `trend_snapshot` を `UPSERT`（冪等性確保）。
 6. 地域単位失敗があれば `partial`、全成功なら `succeeded`。
@@ -277,18 +289,27 @@ JOIN latest l
 
 ## 9. 開発順序（実装担当向け）
 
-### 9.1 Gate 0（着手初日）
+### 9.1 Gate 0（着手初日）✅ 完了
 - [x] 大阪WOEID確定: **15015370**（2026-02-12 検証済み）
-- [ ] X APIで日本/東京/大阪の実データ取得確認（Bearer Token必要）
-- [ ] 利用規約上の表示/保存要件を確認
+- [x] X APIで日本/東京/大阪の実データ取得確認（2026-02-14 検証済み）
+  - 日本（23424856）: 正常取得、30件のトレンドデータ確認
+  - 東京（1118370）: 正常取得
+  - 大阪（15015370）: 正常取得
+  - レスポンス構造: `{"data": [{"trend_name": "..."}]}`
+  - `tweet_count` は返却されない（NULL設計で正解）
+- [x] 利用規約上の表示/保存要件を確認（2026-02-14 検証済み）
+  - 詳細は付録F参照
 
-### 9.2 実装ステップ
-1. DBマイグレーション（`place`, `term`, `ingest_run`, `trend_snapshot`）。
-2. 収集バッチ実装（Cloud Runジョブ + Scheduler）。
-3. `/` と `/place/[slug]` 実装。
-4. `/term/[termKey]` 実装（24h/7d）。
-5. SEO最小セット実装（metadata, sitemap, canonical）。
-6. 監視と失敗通知（Cloud Loggingベース）。
+### 9.2 実装ステップ（Codexレビュー反映版）
+1. **プロジェクト初期化**（Next.js + Supabase CLI + 環境変数）
+2. **DBマイグレーション + seed**（`place`, `term`, `ingest_run`, `ingest_run_place`, `trend_snapshot`）
+3. **収集バッチ実装**（Cloud Runジョブ + Scheduler）
+4. **監視・失敗通知**（バッチと同時に実装 - Cloud Loggingベース）
+5. `/` と `/place/[slug]` 実装
+6. `/term/[termKey]` 実装（24h/7d）
+7. **SEO最小セット実装**（metadata, sitemap, canonical）
+
+※ 監視はバッチ導入直後に入れる（Codex指摘: 初期運用の失敗検知遅延防止）
 
 ### 9.3 Definition of Done（MVP）
 - P0機能が本番環境で動作し、72時間連続で収集継続。
@@ -326,10 +347,10 @@ curl -X GET \
 ```
 
 ### A.4 パラメータ
-| パラメータ | 内容 |
-| --- | --- |
-| woeid | 地域ID |
-| max_trends | 最大取得件数（1〜50） |
+| パラメータ | 内容 | 設定値 |
+| --- | --- | --- |
+| woeid | 地域ID | 必須 |
+| max_trends | 最大取得件数（1〜50） | **常に50を指定** |
 
 ### A.5 レスポンス例
 ```json
@@ -341,9 +362,13 @@ curl -X GET \
 }
 ```
 
-※ `tweet_count` は返らないケースがあるため NULL前提設計とする。
+※ `tweet_count` はドキュメントに記載があり受け取る仕組みとするが、実際には返却されないケースがあるため NULL許容設計とする。
 
-### A.6 対応WOEID一覧（日本）
+### A.6 取得件数方針
+- **常に `max_trends=50` を指定する**
+- 理由: 1回のAPIコール料金は取得件数に依存しないため、最大件数を取得するのが最もコスト効率が良い
+
+### A.7 対応WOEID一覧（日本）
 | 地域 | WOEID | slug |
 | --- | --- | --- |
 | 日本（全国） | 23424856 | jp |
@@ -401,3 +426,41 @@ curl -X GET \
 | Phase2 | 世界・アメリカ追加 + 英語UI |
 | Phase3 | 英語圏拡張 |
 | Phase4 | 非英語圏追加 |
+
+---
+
+## 付録F. X API利用規約コンプライアンス（2026-02-14確認）
+
+### F.1 表示要件（Display Requirements）
+XTrendはトレンド名のみを表示するため、ツイート表示に関する厳格な要件（ユーザー名、プロフィール画像、アクション等）は直接適用されない。
+
+**遵守事項**
+- X/Twitterがデータソースであることの帰属表示
+- フッター等に「Data from X」等の表記を追加
+
+### F.2 データ保存・キャッシュ
+**許可されている利用**
+- X Contentのコピー、表示、フォーマット調整は許可
+- トレンドデータ（trend_name）の蓄積・時系列表示は許可範囲内
+
+**注意事項**
+- 位置情報データは関連コンテンツと紐づけた形でのみ保存可
+- XTrendはトレンド名+WOEID（地域）という形で保存するため問題なし
+
+### F.3 禁止事項
+- AI/MLモデルのトレーニング利用（Grok除く）→ XTrendは対象外
+- 監視目的での利用 → XTrendは対象外
+- スパム行為 → XTrendは閲覧専用のため対象外
+
+### F.4 XTrendへの具体的対応
+| 要件 | 対応 |
+| --- | --- |
+| 帰属表示 | フッターに「Trend data provided by X」を表示 |
+| データ保存 | トレンド名+地域+時刻の保存は許可範囲内 |
+| 表示形式 | ランキング形式での表示は問題なし |
+| 更新頻度 | 1時間ごとの取得・表示は規約に抵触しない |
+
+### F.5 参考リンク
+- X Terms of Service: https://x.com/tos
+- X Developer Policy: https://developer.x.com/developer-terms/policy
+- Display Requirements: https://developer.twitter.com/en/developer-terms/display-requirements
