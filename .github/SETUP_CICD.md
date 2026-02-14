@@ -80,20 +80,17 @@ echo "github-actions@${PROJECT_ID}.iam.gserviceaccount.com"
 | `WIF_PROVIDER` | `projects/716605103738/locations/global/workloadIdentityPools/github-pool/providers/github-provider` |
 | `WIF_SERVICE_ACCOUNT` | `github-actions@xtrend-prod.iam.gserviceaccount.com` |
 
-## Cloud Scheduler 更新（1分間隔に変更）
+## Cloud Scheduler 更新（毎時01分に変更）
 
 ```bash
 # 現在: 毎時05分 (5 * * * *)
-# 変更: 毎分 (* * * * *)
+# 変更: 毎時01分 (1 * * * *)
 
 gcloud scheduler jobs update http xtrend-hourly-ingest \
   --location asia-northeast1 \
-  --schedule "* * * * *" \
-  --description "XTrend minutely trend ingestion"
+  --schedule "1 * * * *" \
+  --description "XTrend hourly trend ingestion (at minute 1)"
 ```
-
-⚠️ **注意**: 1分間隔 = 1440回/日 = 43,200回/月
-X API のレート制限を確認してください。
 
 ## 動作確認
 
