@@ -24,7 +24,7 @@ async function runCli(): Promise<void> {
 
   try {
     const config = loadConfig();
-    initDb(config.supabaseUrl, config.supabaseServiceRoleKey);
+    initDb(config.supabaseUrl, config.supabaseSecretKey);
 
     const result = await runIngest(config.xBearerToken);
 
@@ -44,7 +44,7 @@ async function runCli(): Promise<void> {
  */
 async function runHttpServer(): Promise<void> {
   const config = loadConfig();
-  initDb(config.supabaseUrl, config.supabaseServiceRoleKey);
+  initDb(config.supabaseUrl, config.supabaseSecretKey);
 
   const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
     // Health check
