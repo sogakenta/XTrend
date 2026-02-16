@@ -1,15 +1,12 @@
 'use client';
 
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useRouter } from 'next/navigation';
+import { VALID_OFFSETS, OFFSET_LABELS, type ValidOffset } from '@/lib/constants';
 
-const OFFSETS = [
-  { value: '0', label: '現在' },
-  { value: '1', label: '1時間前' },
-  { value: '3', label: '3時間前' },
-  { value: '6', label: '6時間前' },
-  { value: '12', label: '12時間前' },
-  { value: '24', label: '24時間前' },
-];
+const OFFSETS = VALID_OFFSETS.map((value) => ({
+  value: String(value),
+  label: OFFSET_LABELS[value],
+}));
 
 interface TimeOffsetTabsProps {
   currentOffset: number;

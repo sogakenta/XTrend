@@ -1,10 +1,32 @@
-import { notFound } from 'next/navigation';
+import { notFound, redirect } from 'next/navigation';
 import { getPlaceBySlug, getLatestTrends, getTrendsAtOffset } from '@/lib/data';
 import { TrendList, UpdatedAt, TimeOffsetTabs } from '@/components';
+import { VALID_OFFSETS } from '@/lib/constants';
 import type { Metadata } from 'next';
 
-// ISR: 300 seconds
-export const revalidate = 300;
+// ISR: 600 seconds (10 minutes)
+export const revalidate = 600;
+
+/**
+ * Parse and validate offset parameter.
+ * Returns { valid: true, value } for valid values, { valid: false } for invalid.
+ * Strict validation: only exact numeric strings matching preset values are accepted.
+ */
+function parseOffset(offsetStr: string | undefined): { valid: true; value: number } | { valid: false } {
+  if (!offsetStr) return { valid: true, value: 0 };
+
+  // Strict validation: must be exact numeric string (no "1abc", "3.5", etc.)
+  if (!/^\d+$/.test(offsetStr)) {
+    return { valid: false };
+  }
+
+  const parsed = parseInt(offsetStr, 10);
+  // Reject non-preset values (cast to number[] for includes check)
+  if (!(VALID_OFFSETS as readonly number[]).includes(parsed)) {
+    return { valid: false };
+  }
+  return { valid: true, value: parsed };
+}
 
 interface PageProps {
   params: Promise<{ slug: string }>;
@@ -28,7 +50,13 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 export default async function PlacePage({ params, searchParams }: PageProps) {
   const { slug } = await params;
   const { offset: offsetStr } = await searchParams;
-  const offset = offsetStr ? parseInt(offsetStr, 10) : 0;
+  const offsetResult = parseOffset(offsetStr);
+
+  // Redirect invalid offset to base path (prevents cache key explosion)
+  if (!offsetResult.valid) {
+    redirect(`/place/${slug}`);
+  }
+  const offset = offsetResult.value;
 
   const place = await getPlaceBySlug(slug);
   if (!place) {

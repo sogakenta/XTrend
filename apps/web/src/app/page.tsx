@@ -3,8 +3,8 @@ import { TrendList, UpdatedAt } from '@/components';
 import Link from 'next/link';
 import type { TrendItemWithSignals } from '@/lib/types';
 
-// ISR: 300 seconds
-export const revalidate = 300;
+// ISR: 600 seconds (10 minutes)
+export const revalidate = 600;
 
 // Japan WOEID
 const JAPAN_WOEID = 23424856;

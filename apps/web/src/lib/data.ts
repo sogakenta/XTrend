@@ -3,6 +3,65 @@ import { supabase } from './supabase';
 import type { Place, PlaceTrends, TrendItem, TrendItemWithSignals, Term, TermHistory } from './types';
 
 /**
+ * Resolution mode for captured_at lookup
+ * - exact_or_null: Returns the exact time point or null (for rankChange comparison)
+ * - nearest_before: Returns the nearest time point before target (for history display)
+ */
+type ResolveMode = 'exact_or_null' | 'nearest_before';
+
+/**
+ * Resolve the captured_at timestamp for a given offset.
+ *
+ * @param woeid - The place WOEID
+ * @param baseCapturedAt - The base timestamp to calculate offset from
+ * @param offsetHours - Hours to go back from base
+ * @param mode - Resolution mode
+ * @returns The resolved captured_at string or null if not found
+ */
+async function resolveCapturedAt(
+  woeid: number,
+  baseCapturedAt: string,
+  offsetHours: number,
+  mode: ResolveMode = 'exact_or_null'
+): Promise<string | null> {
+  if (offsetHours === 0) {
+    return baseCapturedAt;
+  }
+
+  // Calculate target time (UTC)
+  const baseTime = new Date(baseCapturedAt);
+  const targetTime = new Date(baseTime.getTime() - offsetHours * 60 * 60 * 1000);
+  // Round to hour (ingest stores data at hour boundaries)
+  targetTime.setUTCMinutes(0, 0, 0);
+  const targetIso = targetTime.toISOString();
+
+  if (mode === 'exact_or_null') {
+    // Exact match only
+    const { data } = await supabase
+      .from('trend_snapshot')
+      .select('captured_at')
+      .eq('woeid', woeid)
+      .eq('captured_at', targetIso)
+      .limit(1)
+      .maybeSingle();
+
+    return data?.captured_at ?? null;
+  } else {
+    // nearest_before: Find the closest snapshot at or before target time
+    const { data } = await supabase
+      .from('trend_snapshot')
+      .select('captured_at')
+      .eq('woeid', woeid)
+      .lte('captured_at', targetIso)
+      .order('captured_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    return data?.captured_at ?? null;
+  }
+}
+
+/**
  * Get all active places
  */
 export async function getPlaces(): Promise<Place[]> {
@@ -161,6 +220,11 @@ export async function getTrendsAtOffset(woeid: number, hoursAgo: number): Promis
 
 /**
  * Get latest trends with calculated signals (rank change, duration, region count)
+ *
+ * Signal definitions:
+ * - rankChange: Difference from EXACTLY 1 hour ago (null if data missing)
+ * - regionCount: Number of regions trending at the SAME captured_at
+ * - durationHours: CONSECUTIVE hours in top 50 (stops at first gap)
  */
 export async function getLatestTrendsWithSignals(woeid: number): Promise<{
   place: Place;
@@ -174,41 +238,44 @@ export async function getLatestTrendsWithSignals(woeid: number): Promise<{
   const { place, capturedAt, trends } = basicData;
   const termIds = trends.map(t => t.termId);
 
-  // Calculate time 1 hour ago
-  const currentTime = new Date(capturedAt);
-  const oneHourAgo = new Date(currentTime.getTime() - 60 * 60 * 1000);
+  // Early return if no trends (avoid empty .in() query)
+  if (termIds.length === 0) {
+    return { place, capturedAt, trends: [] };
+  }
 
-  // Get positions from 1 hour ago for rank change calculation
-  const { data: previousSnapshots } = await supabase
-    .from('trend_snapshot')
-    .select('term_id, position, captured_at')
-    .eq('woeid', woeid)
-    .in('term_id', termIds)
-    .lte('captured_at', oneHourAgo.toISOString())
-    .order('captured_at', { ascending: false });
+  // === P0-1: rankChange with fixed time point ===
+  // Resolve exactly 1 hour ago (returns null if missing)
+  const oneHourAgoCapturedAt = await resolveCapturedAt(woeid, capturedAt, 1, 'exact_or_null');
 
-  // Create map of term_id -> previous position (most recent before 1 hour ago)
   const previousPositions = new Map<number, number>();
-  if (previousSnapshots) {
-    for (const snap of previousSnapshots) {
-      if (!previousPositions.has(snap.term_id)) {
+  if (oneHourAgoCapturedAt) {
+    // Fixed time point query - returns exactly 50 rows max
+    const { data: previousSnapshots } = await supabase
+      .from('trend_snapshot')
+      .select('term_id, position')
+      .eq('woeid', woeid)
+      .eq('captured_at', oneHourAgoCapturedAt)
+      .in('term_id', termIds);
+
+    if (previousSnapshots) {
+      for (const snap of previousSnapshots) {
         previousPositions.set(snap.term_id, snap.position);
       }
     }
   }
 
-  // Get region count for each term at current time (same captured_at across all woeids)
-  const { data: regionSnapshots } = await supabase
+  // === P0-3: regionCount with fixed time point ===
+  // Use the exact same captured_at across all regions (ingest already stores at hour boundaries)
+  // Query to count distinct woeids per term at the same captured_at
+  const { data: regionData } = await supabase
     .from('trend_snapshot')
     .select('term_id, woeid')
-    .in('term_id', termIds)
-    .gte('captured_at', new Date(currentTime.getTime() - 30 * 60 * 1000).toISOString()) // Within 30 min
-    .lte('captured_at', new Date(currentTime.getTime() + 30 * 60 * 1000).toISOString());
+    .eq('captured_at', capturedAt)
+    .in('term_id', termIds);
 
-  // Count distinct regions per term
   const regionCounts = new Map<number, Set<number>>();
-  if (regionSnapshots) {
-    for (const snap of regionSnapshots) {
+  if (regionData) {
+    for (const snap of regionData) {
       if (!regionCounts.has(snap.term_id)) {
         regionCounts.set(snap.term_id, new Set());
       }
@@ -216,38 +283,66 @@ export async function getLatestTrendsWithSignals(woeid: number): Promise<{
     }
   }
 
-  // Calculate duration (how many consecutive hours in top 50)
-  const twentyFourHoursAgo = new Date(currentTime.getTime() - 24 * 60 * 60 * 1000);
+  // === P0-2: durationHours with consecutive hour detection ===
+  // Get all snapshots for past 24 hours to check continuity
+  const baseTime = new Date(capturedAt);
+  const twentyFourHoursAgo = new Date(baseTime.getTime() - 24 * 60 * 60 * 1000);
+
   const { data: durationSnapshots } = await supabase
     .from('trend_snapshot')
     .select('term_id, captured_at')
     .eq('woeid', woeid)
     .in('term_id', termIds)
     .gte('captured_at', twentyFourHoursAgo.toISOString())
+    .lte('captured_at', capturedAt)
     .order('captured_at', { ascending: false });
 
-  // Calculate duration for each term
+  // Calculate consecutive duration for each term
   const durationMap = new Map<number, number>();
   if (durationSnapshots) {
-    const termSnapshots = new Map<number, string[]>();
+    // Group snapshots by term_id, normalize timestamps to epoch ms for comparison
+    const termSnapshots = new Map<number, Set<number>>();
     for (const snap of durationSnapshots) {
       if (!termSnapshots.has(snap.term_id)) {
-        termSnapshots.set(snap.term_id, []);
+        termSnapshots.set(snap.term_id, new Set());
       }
-      termSnapshots.get(snap.term_id)!.push(snap.captured_at);
+      // Normalize to hour boundary and store as epoch ms (avoids Z vs +00:00 issues)
+      const snapTime = new Date(snap.captured_at);
+      snapTime.setUTCMinutes(0, 0, 0);
+      termSnapshots.get(snap.term_id)!.add(snapTime.getTime());
     }
 
-    for (const [termId, timestamps] of termSnapshots) {
-      // Count consecutive hours from now
-      const hours = timestamps.length; // Each snapshot = 1 hour
-      durationMap.set(termId, Math.min(hours, 24));
+    // For each term, count consecutive hours from current time
+    for (const [termId, timestampSet] of termSnapshots) {
+      let consecutiveHours = 0;
+      const currentHour = new Date(capturedAt);
+      currentHour.setUTCMinutes(0, 0, 0);
+
+      // Check each hour going backwards
+      for (let h = 0; h < 24; h++) {
+        const checkTime = currentHour.getTime() - h * 60 * 60 * 1000;
+
+        if (timestampSet.has(checkTime)) {
+          consecutiveHours++;
+        } else {
+          // Gap found - stop counting
+          break;
+        }
+      }
+
+      if (consecutiveHours > 0) {
+        durationMap.set(termId, consecutiveHours);
+      }
     }
   }
 
   // Enhance trends with signals
   const trendsWithSignals: TrendItemWithSignals[] = trends.map(trend => {
     const prevPos = previousPositions.get(trend.termId);
-    const rankChange = prevPos !== undefined ? prevPos - trend.position : undefined;
+    // rankChange is null if 1-hour-ago data is missing (not undefined)
+    const rankChange = oneHourAgoCapturedAt === null
+      ? undefined  // Data missing - show as unknown
+      : (prevPos !== undefined ? prevPos - trend.position : undefined);
     const regionCount = regionCounts.get(trend.termId)?.size;
     const durationHours = durationMap.get(trend.termId);
 
