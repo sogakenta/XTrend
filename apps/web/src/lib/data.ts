@@ -10,6 +10,21 @@ import type { Place, PlaceTrends, TrendItem, TrendItemWithSignals, Term, TermHis
 type ResolveMode = 'exact_or_null' | 'nearest_before';
 
 /**
+ * Deduplicate trends by term_id, keeping only the first occurrence (lowest position).
+ * This handles edge cases where the same term might appear multiple times due to data issues.
+ */
+function deduplicateTrends<T extends { termId: number }>(trends: T[]): T[] {
+  const seen = new Set<number>();
+  return trends.filter(trend => {
+    if (seen.has(trend.termId)) {
+      return false;
+    }
+    seen.add(trend.termId);
+    return true;
+  });
+}
+
+/**
  * Resolve the captured_at timestamp for a given offset.
  *
  * @param woeid - The place WOEID
@@ -133,18 +148,127 @@ export async function getLatestTrends(woeid: number): Promise<PlaceTrends | null
 
   if (snapshotError) throw new Error(`Failed to fetch trends: ${snapshotError.message}`);
 
-  const trends: TrendItem[] = (snapshots || []).map((s: any) => ({
-    position: s.position,
-    termId: s.term_id,
-    termText: s.term?.term_text || '',
-    tweetCount: s.tweet_count,
-  }));
+  const trends: TrendItem[] = deduplicateTrends(
+    (snapshots || []).map((s: any) => ({
+      position: s.position,
+      termId: s.term_id,
+      termText: s.term?.term_text || '',
+      tweetCount: s.tweet_count,
+    }))
+  );
 
   return {
     place: place as Place,
     capturedAt,
     trends,
   };
+}
+
+/**
+ * Get trends for multiple offsets at once (batch query optimization)
+ * Reduces query count from O(n*4) to O(n+3) for n offsets
+ */
+export async function getTrendsForOffsets(
+  woeid: number,
+  offsets: number[]
+): Promise<Map<number, PlaceTrends>> {
+  const result = new Map<number, PlaceTrends>();
+
+  if (offsets.length === 0) return result;
+
+  // Get place info (1 query)
+  const { data: place, error: placeError } = await supabase
+    .from('place')
+    .select('*')
+    .eq('woeid', woeid)
+    .single();
+
+  if (placeError || !place) return result;
+
+  // Get latest captured_at (1 query)
+  const { data: latestSnapshot } = await supabase
+    .from('trend_snapshot')
+    .select('captured_at')
+    .eq('woeid', woeid)
+    .order('captured_at', { ascending: false })
+    .limit(1)
+    .single();
+
+  if (!latestSnapshot) return result;
+
+  const latestCapturedAt = latestSnapshot.captured_at;
+  const latestTime = new Date(latestCapturedAt);
+
+  // Calculate all target times
+  // For offset=0, use the exact latest captured_at (not rounded)
+  // For other offsets, calculate target time rounded to hour boundary
+  const targetTimes = offsets.map(offset => {
+    if (offset === 0) {
+      return { offset, targetIso: latestCapturedAt };
+    }
+    const targetTime = new Date(latestTime.getTime() - offset * 60 * 60 * 1000);
+    targetTime.setUTCMinutes(0, 0, 0);
+    return { offset, targetIso: targetTime.toISOString() };
+  });
+
+  // Get all unique captured_at values we need (1 query with IN clause)
+  const uniqueTargetIsos = [...new Set(targetTimes.map(t => t.targetIso))];
+  const { data: availableSnapshots } = await supabase
+    .from('trend_snapshot')
+    .select('captured_at')
+    .eq('woeid', woeid)
+    .in('captured_at', uniqueTargetIsos)
+    .order('captured_at', { ascending: false });
+
+  const availableTimes = new Set(availableSnapshots?.map(s => s.captured_at) || []);
+
+  // Get all trends for available times (1 query)
+  const timesToFetch = [...availableTimes];
+  if (timesToFetch.length === 0) return result;
+
+  const { data: allSnapshots } = await supabase
+    .from('trend_snapshot')
+    .select(`
+      captured_at,
+      position,
+      term_id,
+      tweet_count,
+      term:term_id (term_id, term_text)
+    `)
+    .eq('woeid', woeid)
+    .in('captured_at', timesToFetch)
+    .order('position');
+
+  // Group snapshots by captured_at
+  const snapshotsByTime = new Map<string, typeof allSnapshots>();
+  for (const snap of allSnapshots || []) {
+    const existing = snapshotsByTime.get(snap.captured_at) || [];
+    existing.push(snap);
+    snapshotsByTime.set(snap.captured_at, existing);
+  }
+
+  // Build result for each offset
+  for (const { offset, targetIso } of targetTimes) {
+    if (!availableTimes.has(targetIso)) continue;
+
+    const snapshots = snapshotsByTime.get(targetIso) || [];
+    const trends: TrendItem[] = deduplicateTrends(
+      snapshots.map((s: any) => ({
+        position: s.position,
+        termId: s.term_id,
+        termText: s.term?.term_text || '',
+        tweetCount: s.tweet_count,
+      }))
+    );
+
+    result.set(offset, {
+      place: place as Place,
+      capturedAt: targetIso,
+      trends,
+    });
+  }
+
+  return result;
 }
 
 /**
@@ -204,12 +328,14 @@ export async function getTrendsAtOffset(woeid: number, hoursAgo: number): Promis
 
   if (snapshotError) throw new Error(`Failed to fetch trends: ${snapshotError.message}`);
 
-  const trends: TrendItem[] = (snapshots || []).map((s: any) => ({
-    position: s.position,
-    termId: s.term_id,
-    termText: s.term?.term_text || '',
-    tweetCount: s.tweet_count,
-  }));
+  const trends: TrendItem[] = deduplicateTrends(
+    (snapshots || []).map((s: any) => ({
+      position: s.position,
+      termId: s.term_id,
+      termText: s.term?.term_text || '',
+      tweetCount: s.tweet_count,
+    }))
+  );
 
   return {
     place: place as Place,

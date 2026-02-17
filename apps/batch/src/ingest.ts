@@ -186,8 +186,8 @@ async function processPlace(
     };
   }
 
-  const trends = fetchResult.data.data;
-  if (!trends || !Array.isArray(trends)) {
+  const rawTrends = fetchResult.data.data;
+  if (!rawTrends || !Array.isArray(rawTrends)) {
     return {
       woeid,
       success: false,
@@ -196,7 +196,24 @@ async function processPlace(
     };
   }
 
-  console.log(`[Ingest] Received ${trends.length} trends for WOEID ${woeid}`);
+  // Deduplicate trends by trend_name (keep first occurrence only)
+  // X API sometimes returns the same trend at multiple positions
+  const seenNames = new Set<string>();
+  const trends = rawTrends.filter(trend => {
+    const name = trend.trend_name?.toLowerCase();
+    if (!name || seenNames.has(name)) {
+      return false;
+    }
+    seenNames.add(name);
+    return true;
+  });
+
+  const duplicateCount = rawTrends.length - trends.length;
+  if (duplicateCount > 0) {
+    console.log(`[Ingest] Removed ${duplicateCount} duplicate trends for WOEID ${woeid}`);
+  }
+
+  console.log(`[Ingest] Processing ${trends.length} unique trends for WOEID ${woeid}`);
 
   // Insert trends (limit to top 50)
   const maxTrends = Math.min(trends.length, 50);

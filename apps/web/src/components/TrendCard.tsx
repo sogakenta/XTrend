@@ -5,10 +5,45 @@ interface TrendCardProps {
   trend: TrendItemWithSignals;
   showRank?: boolean;
   showSignals?: boolean;
+  compact?: boolean;
 }
 
-export function TrendCard({ trend, showRank = true, showSignals = false }: TrendCardProps) {
+export function TrendCard({ trend, showRank = true, showSignals = false, compact = false }: TrendCardProps) {
   const hasSignals = showSignals && (trend.rankChange !== undefined || trend.durationHours !== undefined || trend.regionCount !== undefined);
+
+  if (compact) {
+    // Compact mode for horizontal scroll view
+    return (
+      <Link
+        href={`/term/t-${trend.termId}`}
+        className="block py-2 px-3 hover:bg-zinc-50 dark:hover:bg-zinc-900 transition-colors"
+      >
+        <div className="flex items-center gap-2">
+          {showRank && (
+            <span className="w-6 text-right text-sm font-bold text-zinc-400 dark:text-zinc-500 flex-shrink-0">
+              {trend.position}
+            </span>
+          )}
+          <span className="text-zinc-900 dark:text-zinc-100 font-medium text-sm truncate">
+            {trend.termText}
+          </span>
+        </div>
+        {/* Compact signals - inline */}
+        {hasSignals && (
+          <div className="flex items-center gap-1.5 mt-1 ml-8">
+            {trend.rankChange !== undefined && trend.rankChange !== 0 && (
+              <span className={`text-xs ${trend.rankChange > 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                {trend.rankChange > 0 ? '↑' : '↓'}{Math.abs(trend.rankChange)}
+              </span>
+            )}
+            {trend.durationHours !== undefined && (
+              <span className="text-xs text-zinc-500">{trend.durationHours}h</span>
+            )}
+          </div>
+        )}
+      </Link>
+    );
+  }
 
   return (
     <Link

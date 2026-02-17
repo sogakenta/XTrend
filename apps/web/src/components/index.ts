@@ -1,6 +1,8 @@
 export { Header } from './Header';
+export { Sidebar } from './Sidebar';
 export { TrendList } from './TrendList';
 export { TrendCard } from './TrendCard';
+export { TrendColumn } from './TrendColumn';
 export { UpdatedAt } from './UpdatedAt';
 export { TimeOffsetTabs } from './TimeOffsetTabs';
 export { PositionChart } from './PositionChart';

@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
-import { Header } from "@/components";
+import { Sidebar } from "@/components";
+import { getPlaces } from "@/lib/data";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -18,20 +19,24 @@ export const metadata: Metadata = {
   description: "日本のXトレンドをリアルタイムで分析",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const places = await getPlaces();
+
   return (
     <html lang="ja">
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased bg-white dark:bg-zinc-950`}
       >
-        <Header />
-        <main className="max-w-7xl mx-auto px-4 py-8">
-          {children}
-        </main>
+        <div className="flex min-h-screen">
+          <Sidebar places={places} />
+          <main className="flex-1 px-4 py-8 lg:px-8">
+            {children}
+          </main>
+        </div>
       </body>
     </html>
   );
