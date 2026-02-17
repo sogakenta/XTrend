@@ -1,7 +1,7 @@
 'use client';
 
-// Position 51 represents "圏外" (out of ranking)
-const OUT_OF_RANK_POSITION = 51;
+// Position 53 represents "圏外" (out of ranking) - extra gap for visual distinction from 50位
+const OUT_OF_RANK_POSITION = 53;
 
 interface DataPoint {
   capturedAt: string;
