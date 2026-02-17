@@ -38,60 +38,57 @@ export function PositionChart({ data, height = 200 }: PositionChartProps) {
   const minPos = Math.max(1, dataMin - 2);
   const maxPos = hasOutOfRank ? OUT_OF_RANK_POSITION : Math.min(50, dataMax + 2);
 
+  // Helper to calculate Y position
+  const getY = (pos: number) =>
+    padding.top + ((pos - minPos) / (maxPos - minPos)) * (chartHeight - padding.top - padding.bottom);
+
   // Calculate points
   const points = data.map((d, i) => {
     const x = padding.left + (i / Math.max(data.length - 1, 1)) * (chartWidth - padding.left - padding.right);
     const effectivePosition = d.position ?? OUT_OF_RANK_POSITION;
-    const y = padding.top + ((effectivePosition - minPos) / (maxPos - minPos)) * (chartHeight - padding.top - padding.bottom);
+    const y = getY(effectivePosition);
     return { x, y, position: d.position, time: d.capturedAt, isOutOfRank: d.position === null };
   });
 
-  // Create path segments (separate lines for ranked vs out-of-rank transitions)
-  const pathSegments: string[] = [];
-  let currentSegment: string[] = [];
-  let lastRankedPoint: typeof points[0] | null = null;
+  // Create single continuous path connecting all points (including 圏外)
+  const pathD = points
+    .map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`)
+    .join(' ');
 
-  points.forEach((p, i) => {
-    if (!p.isOutOfRank) {
-      if (currentSegment.length === 0) {
-        currentSegment.push(`M ${p.x} ${p.y}`);
-      } else {
-        currentSegment.push(`L ${p.x} ${p.y}`);
-      }
-      lastRankedPoint = p;
-    } else {
-      // Out of rank point - if we have a current segment, close it
-      if (currentSegment.length > 0) {
-        pathSegments.push(currentSegment.join(' '));
-        currentSegment = [];
-      }
-    }
-  });
-  if (currentSegment.length > 0) {
-    pathSegments.push(currentSegment.join(' '));
-  }
-
-  // Y-axis labels - dynamic based on range
+  // Y-axis labels - dynamic based on range, avoiding overlaps
+  const minLabelDistance = 18; // Minimum pixel distance between labels
   const range = maxPos - minPos;
   const step = range <= 10 ? 2 : range <= 20 ? 5 : 10;
-  const yLabels: number[] = [];
-  for (let pos = Math.ceil(minPos / step) * step; pos <= maxPos; pos += step) {
-    if (pos >= minPos && pos <= 50) yLabels.push(pos);
+
+  // Generate candidate labels
+  const candidateLabels: Array<{ pos: number; label: string; isOutOfRank: boolean }> = [];
+  for (let pos = Math.ceil(minPos / step) * step; pos <= 50; pos += step) {
+    if (pos >= minPos) {
+      candidateLabels.push({ pos, label: `${pos}位`, isOutOfRank: false });
+    }
   }
-  // Always include min and max (but max might be 51 for 圏外)
-  if (!yLabels.includes(minPos)) yLabels.unshift(minPos);
-  if (dataMax <= 50 && !yLabels.includes(Math.min(50, dataMax + 2))) {
-    const maxLabel = Math.min(50, dataMax + 2);
-    if (!yLabels.includes(maxLabel)) yLabels.push(maxLabel);
+  // Add 圏外 if needed
+  if (hasOutOfRank) {
+    candidateLabels.push({ pos: OUT_OF_RANK_POSITION, label: '圏外', isOutOfRank: true });
+  }
+
+  // Filter labels to avoid overlaps
+  const filteredLabels: typeof candidateLabels = [];
+  for (const candidate of candidateLabels) {
+    const candidateY = getY(candidate.pos);
+    const hasOverlap = filteredLabels.some(existing => {
+      const existingY = getY(existing.pos);
+      return Math.abs(candidateY - existingY) < minLabelDistance;
+    });
+    if (!hasOverlap) {
+      filteredLabels.push(candidate);
+    }
   }
 
   // X-axis labels (show a few time labels)
   const xLabelIndices = data.length <= 6
     ? data.map((_, i) => i)
     : [0, Math.floor(data.length / 2), data.length - 1];
-
-  // Y position for 圏外 label
-  const outOfRankY = padding.top + ((OUT_OF_RANK_POSITION - minPos) / (maxPos - minPos)) * (chartHeight - padding.top - padding.bottom);
 
   return (
     <div className="bg-zinc-50 dark:bg-zinc-900 rounded-lg p-4">
@@ -100,54 +97,31 @@ export function PositionChart({ data, height = 200 }: PositionChartProps) {
         className="w-full"
         style={{ height: `${height}px` }}
       >
-        {/* Grid lines */}
-        {yLabels.map((pos) => {
-          const y = padding.top + ((pos - minPos) / (maxPos - minPos)) * (chartHeight - padding.top - padding.bottom);
+        {/* Grid lines and labels */}
+        {filteredLabels.map(({ pos, label, isOutOfRank }) => {
+          const y = getY(pos);
           return (
-            <g key={pos}>
+            <g key={label}>
               <line
                 x1={padding.left}
                 y1={y}
                 x2={chartWidth - padding.right}
                 y2={y}
                 stroke="currentColor"
-                className="text-zinc-200 dark:text-zinc-700"
-                strokeDasharray="4 4"
+                className={isOutOfRank ? "text-zinc-300 dark:text-zinc-600" : "text-zinc-200 dark:text-zinc-700"}
+                strokeDasharray={isOutOfRank ? "2 2" : "4 4"}
               />
               <text
                 x={padding.left - 8}
                 y={y + 4}
                 textAnchor="end"
-                className="text-xs fill-zinc-500"
+                className={`text-xs ${isOutOfRank ? 'fill-zinc-400' : 'fill-zinc-500'}`}
               >
-                {pos}位
+                {label}
               </text>
             </g>
           );
         })}
-
-        {/* 圏外 line and label */}
-        {hasOutOfRank && (
-          <g>
-            <line
-              x1={padding.left}
-              y1={outOfRankY}
-              x2={chartWidth - padding.right}
-              y2={outOfRankY}
-              stroke="currentColor"
-              className="text-zinc-300 dark:text-zinc-600"
-              strokeDasharray="2 2"
-            />
-            <text
-              x={padding.left - 8}
-              y={outOfRankY + 4}
-              textAnchor="end"
-              className="text-xs fill-zinc-400"
-            >
-              圏外
-            </text>
-          </g>
-        )}
 
         {/* X-axis labels */}
         {xLabelIndices.map((i) => {
@@ -171,19 +145,16 @@ export function PositionChart({ data, height = 200 }: PositionChartProps) {
           );
         })}
 
-        {/* Lines (solid for ranked segments) */}
-        {pathSegments.map((d, i) => (
-          <path
-            key={i}
-            d={d}
-            fill="none"
-            stroke="currentColor"
-            className="text-blue-500"
-            strokeWidth={2}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        ))}
+        {/* Single continuous line connecting all points */}
+        <path
+          d={pathD}
+          fill="none"
+          stroke="currentColor"
+          className="text-blue-500"
+          strokeWidth={2}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
 
         {/* Data points */}
         {points.map((p, i) => (
@@ -193,7 +164,7 @@ export function PositionChart({ data, height = 200 }: PositionChartProps) {
             cy={p.y}
             r={4}
             fill="currentColor"
-            className={p.isOutOfRank ? "text-zinc-400" : "text-blue-500"}
+            className="text-blue-500"
           />
         ))}
 
