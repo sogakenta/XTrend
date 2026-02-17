@@ -108,14 +108,15 @@ export function PositionChart({ data, height = 200 }: PositionChartProps) {
                 x2={chartWidth - padding.right}
                 y2={y}
                 stroke="currentColor"
-                className={isOutOfRank ? "text-zinc-400 dark:text-zinc-500" : "text-zinc-300 dark:text-zinc-500"}
+                className={isOutOfRank ? "text-zinc-500 dark:text-zinc-400" : "text-zinc-400 dark:text-zinc-400"}
                 strokeDasharray={isOutOfRank ? "2 2" : "4 4"}
+                strokeWidth={1.5}
               />
               <text
                 x={padding.left - 8}
                 y={y + 4}
                 textAnchor="end"
-                className={`text-xs font-medium ${isOutOfRank ? 'fill-zinc-500 dark:fill-zinc-400' : 'fill-zinc-600 dark:fill-zinc-300'}`}
+                className={`text-xs font-semibold ${isOutOfRank ? 'fill-zinc-600 dark:fill-zinc-300' : 'fill-zinc-700 dark:fill-zinc-200'}`}
               >
                 {label}
               </text>
@@ -138,7 +139,7 @@ export function PositionChart({ data, height = 200 }: PositionChartProps) {
               x={p.x}
               y={chartHeight - 8}
               textAnchor="middle"
-              className="text-xs font-medium fill-zinc-600 dark:fill-zinc-300"
+              className="text-xs font-semibold fill-zinc-700 dark:fill-zinc-200"
             >
               {time}
             </text>
