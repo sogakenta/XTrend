@@ -7,3 +7,4 @@ export { TrendColumn } from './TrendColumn';
 export { UpdatedAt } from './UpdatedAt';
 export { TimeOffsetTabs } from './TimeOffsetTabs';
 export { PositionChart } from './PositionChart';
+export { Spinner } from './Spinner';
