@@ -1,5 +1,5 @@
 import { notFound } from 'next/navigation';
-import { getPlaceBySlug, getLatestTrendsWithSignals, getTrendsAtOffset } from '@/lib/data';
+import { getPlaceBySlug, getTrendsForAllOffsetsBySlug } from '@/lib/data';
 import { TrendList, UpdatedAt } from '@/components';
 import { DEFAULT_DISPLAY_OFFSETS, OFFSET_LABELS, type ValidOffset } from '@/lib/constants';
 import type { Metadata } from 'next';
@@ -30,32 +30,29 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 export default async function PlacePage({ params }: PageProps) {
   const { slug } = await params;
 
-  const place = await getPlaceBySlug(slug);
-  if (!place) {
+  // Use getTrendsForAllOffsetsBySlug to avoid duplicate place query from generateMetadata
+  const offsets = DEFAULT_DISPLAY_OFFSETS;
+  const data = await getTrendsForAllOffsetsBySlug(slug, offsets);
+
+  if (!data) {
     notFound();
   }
 
-  // Fetch trends for all display offsets in parallel
-  // Use getLatestTrendsWithSignals for current (offset=0), getTrendsAtOffset for others
-  const offsets = DEFAULT_DISPLAY_OFFSETS;
-  const fetchPromises = offsets.map(offset =>
-    offset === 0
-      ? getLatestTrendsWithSignals(place.woeid)
-      : getTrendsAtOffset(place.woeid, offset)
-  );
+  const { place, results } = data;
 
-  const results = await Promise.all(fetchPromises);
-
-  // Build column data
-  const columns = offsets.map((offset, index) => ({
-    offset,
-    label: OFFSET_LABELS[offset],
-    data: results[index],
-    showSignals: offset === 0, // Only show signals for current time
-  }));
+  // Build column data from optimized results
+  const columns = offsets.map(offset => {
+    const result = results.get(offset);
+    return {
+      offset,
+      label: OFFSET_LABELS[offset],
+      data: result ? { capturedAt: result.capturedAt, trends: result.trends } : null,
+      showSignals: offset === 0,
+    };
+  });
 
   // Check if we have any data
-  const currentData = results[0];
+  const currentData = results.get(0);
   if (!currentData) {
     return (
       <div className="text-center py-12">

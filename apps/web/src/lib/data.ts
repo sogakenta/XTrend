@@ -541,3 +541,488 @@ export async function getTermHistory(termId: number, hours: number = 24): Promis
 
   return { term, history };
 }
+
+/**
+ * Optimized: Get trends for all offsets with signals in minimal queries
+ *
+ * Query optimization:
+ * - Before: 37 queries (8 functions × 4-8 queries each)
+ * - After: ~12 queries (2 base + 8 parallel nearest time + 1 batch snapshots + 3 parallel signals)
+ * - All nearest-time queries run in parallel, so effective round trips = 4
+ *
+ * @param woeid - Place WOEID
+ * @param offsets - Array of offset hours [0, 1, 3, 6, 12, 24, 48, 72]
+ * @returns Map of offset to trends data with signals for offset=0
+ */
+export async function getTrendsForAllOffsets(
+  woeid: number,
+  offsets: number[]
+): Promise<{
+  place: Place;
+  results: Map<number, { capturedAt: string; trends: TrendItemWithSignals[] }>;
+} | null> {
+  if (offsets.length === 0) return null;
+
+  // Query 1 & 2 in parallel: Get place info and latest captured_at
+  const [placeResult, latestResult] = await Promise.all([
+    supabase.from('place').select('*').eq('woeid', woeid).single(),
+    supabase
+      .from('trend_snapshot')
+      .select('captured_at')
+      .eq('woeid', woeid)
+      .order('captured_at', { ascending: false })
+      .limit(1)
+      .single(),
+  ]);
+
+  if (placeResult.error || !placeResult.data) return null;
+  if (!latestResult.data) return null;
+
+  const place = placeResult.data;
+  const latestCapturedAt = latestResult.data.captured_at;
+  const latestTime = new Date(latestCapturedAt);
+
+  // Query 3: Get distinct captured_at in the past 72+ hours
+  // Use position=1 filter to get only 1 row per captured_at (effectively distinct)
+  const maxOffset = Math.max(...offsets);
+  const oldestTargetTime = new Date(latestTime.getTime() - (maxOffset + 1) * 60 * 60 * 1000);
+
+  const { data: availableTimes } = await supabase
+    .from('trend_snapshot')
+    .select('captured_at')
+    .eq('woeid', woeid)
+    .eq('position', 1)
+    .gte('captured_at', oldestTargetTime.toISOString())
+    .order('captured_at', { ascending: false });
+
+  // Build sorted list of available times (descending) - now only ~73 rows max
+  const sortedTimes = (availableTimes || []).map(t => t.captured_at);
+
+  // Find nearest captured_at for each offset in memory
+  const offsetToActualTime = new Map<number, string>();
+
+  for (const offset of offsets) {
+    if (offset === 0) {
+      offsetToActualTime.set(offset, latestCapturedAt);
+      continue;
+    }
+
+    const targetTime = new Date(latestTime.getTime() - offset * 60 * 60 * 1000);
+    const targetIso = targetTime.toISOString();
+
+    // Find the first time that is <= targetTime (list is descending)
+    const nearestTime = sortedTimes.find(t => t <= targetIso);
+    if (nearestTime) {
+      offsetToActualTime.set(offset, nearestTime);
+    }
+  }
+
+  // Get unique actual times to fetch
+  const timesToFetch = [...new Set(offsetToActualTime.values())];
+  if (timesToFetch.length === 0) return null;
+
+  // Query 4: Get all snapshots for all actual times in one query
+  const { data: allSnapshots } = await supabase
+    .from('trend_snapshot')
+    .select(`
+      captured_at,
+      position,
+      term_id,
+      tweet_count,
+      term:term_id (term_id, term_text)
+    `)
+    .eq('woeid', woeid)
+    .in('captured_at', timesToFetch)
+    .order('position');
+
+  if (!allSnapshots || allSnapshots.length === 0) return null;
+
+  // Group snapshots by captured_at
+  const snapshotsByTime = new Map<string, typeof allSnapshots>();
+  for (const snap of allSnapshots) {
+    const existing = snapshotsByTime.get(snap.captured_at) || [];
+    existing.push(snap);
+    snapshotsByTime.set(snap.captured_at, existing);
+  }
+
+  // Get term IDs for offset=0 (for signal calculation)
+  const currentCapturedAt = offsetToActualTime.get(0) || latestCapturedAt;
+  const currentSnapshots = snapshotsByTime.get(currentCapturedAt) || [];
+  const termIds = currentSnapshots.map((s: any) => s.term_id);
+
+  // Queries 4-6 (parallel): Get signal data for offset=0
+  const oneHourAgo = new Date(latestTime.getTime() - 60 * 60 * 1000);
+  oneHourAgo.setUTCMinutes(0, 0, 0);
+  const oneHourAgoIso = oneHourAgo.toISOString();
+  const twentyFourHoursAgo = new Date(latestTime.getTime() - 24 * 60 * 60 * 1000);
+
+  const [previousResult, regionResult, durationResult] = await Promise.all([
+    // Previous positions (1 hour ago)
+    termIds.length > 0
+      ? supabase
+          .from('trend_snapshot')
+          .select('term_id, position')
+          .eq('woeid', woeid)
+          .eq('captured_at', oneHourAgoIso)
+          .in('term_id', termIds)
+      : Promise.resolve({ data: null }),
+    // Region count
+    termIds.length > 0
+      ? supabase
+          .from('trend_snapshot')
+          .select('term_id, woeid')
+          .eq('captured_at', latestCapturedAt)
+          .in('term_id', termIds)
+      : Promise.resolve({ data: null }),
+    // Duration (24 hours)
+    termIds.length > 0
+      ? supabase
+          .from('trend_snapshot')
+          .select('term_id, captured_at')
+          .eq('woeid', woeid)
+          .in('term_id', termIds)
+          .gte('captured_at', twentyFourHoursAgo.toISOString())
+          .lte('captured_at', latestCapturedAt)
+          .order('captured_at', { ascending: false })
+      : Promise.resolve({ data: null }),
+  ]);
+
+  // Build signal maps
+  const previousPositions = new Map<number, number>();
+  if (previousResult.data) {
+    for (const snap of previousResult.data) {
+      previousPositions.set(snap.term_id, snap.position);
+    }
+  }
+
+  const regionCounts = new Map<number, Set<number>>();
+  if (regionResult.data) {
+    for (const snap of regionResult.data) {
+      if (!regionCounts.has(snap.term_id)) {
+        regionCounts.set(snap.term_id, new Set());
+      }
+      regionCounts.get(snap.term_id)!.add(snap.woeid);
+    }
+  }
+
+  const durationMap = new Map<number, number>();
+  if (durationResult.data) {
+    const termSnapshots = new Map<number, Set<number>>();
+    for (const snap of durationResult.data) {
+      if (!termSnapshots.has(snap.term_id)) {
+        termSnapshots.set(snap.term_id, new Set());
+      }
+      const snapTime = new Date(snap.captured_at);
+      snapTime.setUTCMinutes(0, 0, 0);
+      termSnapshots.get(snap.term_id)!.add(snapTime.getTime());
+    }
+
+    const currentHour = new Date(latestCapturedAt);
+    currentHour.setUTCMinutes(0, 0, 0);
+
+    for (const [termId, timestampSet] of termSnapshots) {
+      let consecutiveHours = 0;
+      for (let h = 0; h < 24; h++) {
+        const checkTime = currentHour.getTime() - h * 60 * 60 * 1000;
+        if (timestampSet.has(checkTime)) {
+          consecutiveHours++;
+        } else {
+          break;
+        }
+      }
+      if (consecutiveHours > 0) {
+        durationMap.set(termId, consecutiveHours);
+      }
+    }
+  }
+
+  // Check if 1-hour-ago data exists
+  const hasOneHourAgoData = snapshotsByTime.has(oneHourAgoIso) || previousResult.data?.length > 0;
+
+  // Build results for each offset
+  const results = new Map<number, { capturedAt: string; trends: TrendItemWithSignals[] }>();
+
+  for (const offset of offsets) {
+    const actualTime = offsetToActualTime.get(offset);
+    if (!actualTime) continue;
+
+    const snapshots = snapshotsByTime.get(actualTime);
+    if (!snapshots || snapshots.length === 0) continue;
+
+    const trends: TrendItemWithSignals[] = deduplicateTrends(
+      snapshots.map((s: any) => {
+        const base: TrendItemWithSignals = {
+          position: s.position,
+          termId: s.term_id,
+          termText: s.term?.term_text || '',
+          tweetCount: s.tweet_count,
+        };
+
+        // Add signals only for offset=0
+        if (offset === 0) {
+          const prevPos = previousPositions.get(s.term_id);
+          base.rankChange = hasOneHourAgoData
+            ? (prevPos !== undefined ? prevPos - s.position : undefined)
+            : undefined;
+          base.durationHours = durationMap.get(s.term_id);
+          const regionCount = regionCounts.get(s.term_id)?.size;
+          base.regionCount = regionCount && regionCount > 1 ? regionCount : undefined;
+        }
+
+        return base;
+      })
+    );
+
+    results.set(offset, { capturedAt: actualTime, trends });
+  }
+
+  return { place: place as Place, results };
+}
+
+/**
+ * Get trends for all offsets by slug (avoids duplicate place query)
+ */
+export async function getTrendsForAllOffsetsBySlug(
+  slug: string,
+  offsets: number[]
+): Promise<{
+  place: Place;
+  results: Map<number, { capturedAt: string; trends: TrendItemWithSignals[] }>;
+} | null> {
+  // Get place by slug
+  const { data: place, error } = await supabase
+    .from('place')
+    .select('*')
+    .eq('slug', slug)
+    .single();
+
+  if (error || !place) return null;
+
+  // Reuse the main function but skip the place query
+  return getTrendsForAllOffsetsInternal(place as Place, offsets);
+}
+
+/**
+ * Internal: Get trends for all offsets (place already resolved)
+ */
+async function getTrendsForAllOffsetsInternal(
+  place: Place,
+  offsets: number[]
+): Promise<{
+  place: Place;
+  results: Map<number, { capturedAt: string; trends: TrendItemWithSignals[] }>;
+} | null> {
+  const woeid = place.woeid;
+
+  if (offsets.length === 0) return null;
+
+  // Query 1: Get latest captured_at
+  const { data: latestResult } = await supabase
+    .from('trend_snapshot')
+    .select('captured_at')
+    .eq('woeid', woeid)
+    .order('captured_at', { ascending: false })
+    .limit(1)
+    .single();
+
+  if (!latestResult) return null;
+
+  const latestCapturedAt = latestResult.captured_at;
+  const latestTime = new Date(latestCapturedAt);
+
+  // Query 2: Get distinct captured_at in the past 72+ hours
+  // Use position=1 filter to get only 1 row per captured_at (effectively distinct)
+  const maxOffset = Math.max(...offsets);
+  const oldestTargetTime = new Date(latestTime.getTime() - (maxOffset + 1) * 60 * 60 * 1000);
+
+  const { data: availableTimes } = await supabase
+    .from('trend_snapshot')
+    .select('captured_at')
+    .eq('woeid', woeid)
+    .eq('position', 1)
+    .gte('captured_at', oldestTargetTime.toISOString())
+    .order('captured_at', { ascending: false });
+
+  // Build sorted list of available times (descending) - now only ~73 rows max
+  const sortedTimes = (availableTimes || []).map(t => t.captured_at);
+
+  // Find nearest captured_at for each offset in memory
+  const offsetToActualTime = new Map<number, string>();
+
+  for (const offset of offsets) {
+    if (offset === 0) {
+      offsetToActualTime.set(offset, latestCapturedAt);
+      continue;
+    }
+
+    const targetTime = new Date(latestTime.getTime() - offset * 60 * 60 * 1000);
+    const targetIso = targetTime.toISOString();
+
+    // Find the first time that is <= targetTime (list is descending)
+    const nearestTime = sortedTimes.find(t => t <= targetIso);
+    if (nearestTime) {
+      offsetToActualTime.set(offset, nearestTime);
+    }
+  }
+
+  // Get unique actual times to fetch
+  const timesToFetch = [...new Set(offsetToActualTime.values())];
+  if (timesToFetch.length === 0) return null;
+
+  // Query 3: Get all snapshots for all actual times in one query
+  const { data: allSnapshots } = await supabase
+    .from('trend_snapshot')
+    .select(`
+      captured_at,
+      position,
+      term_id,
+      tweet_count,
+      term:term_id (term_id, term_text)
+    `)
+    .eq('woeid', woeid)
+    .in('captured_at', timesToFetch)
+    .order('position');
+
+  if (!allSnapshots || allSnapshots.length === 0) return null;
+
+  // Group snapshots by captured_at
+  const snapshotsByTime = new Map<string, typeof allSnapshots>();
+  for (const snap of allSnapshots) {
+    const existing = snapshotsByTime.get(snap.captured_at) || [];
+    existing.push(snap);
+    snapshotsByTime.set(snap.captured_at, existing);
+  }
+
+  // Get term IDs for offset=0 (for signal calculation)
+  const currentCapturedAt = offsetToActualTime.get(0) || latestCapturedAt;
+  const currentSnapshots = snapshotsByTime.get(currentCapturedAt) || [];
+  const termIds = currentSnapshots.map((s: any) => s.term_id);
+
+  // Queries 4-6 (parallel): Get signal data for offset=0
+  const oneHourAgo = new Date(latestTime.getTime() - 60 * 60 * 1000);
+  oneHourAgo.setUTCMinutes(0, 0, 0);
+  const oneHourAgoIso = oneHourAgo.toISOString();
+  const twentyFourHoursAgo = new Date(latestTime.getTime() - 24 * 60 * 60 * 1000);
+
+  const [previousResult, regionResult, durationResult] = await Promise.all([
+    // Previous positions (1 hour ago)
+    termIds.length > 0
+      ? supabase
+          .from('trend_snapshot')
+          .select('term_id, position')
+          .eq('woeid', woeid)
+          .eq('captured_at', oneHourAgoIso)
+          .in('term_id', termIds)
+      : Promise.resolve({ data: null }),
+    // Region count
+    termIds.length > 0
+      ? supabase
+          .from('trend_snapshot')
+          .select('term_id, woeid')
+          .eq('captured_at', latestCapturedAt)
+          .in('term_id', termIds)
+      : Promise.resolve({ data: null }),
+    // Duration (24 hours)
+    termIds.length > 0
+      ? supabase
+          .from('trend_snapshot')
+          .select('term_id, captured_at')
+          .eq('woeid', woeid)
+          .in('term_id', termIds)
+          .gte('captured_at', twentyFourHoursAgo.toISOString())
+          .lte('captured_at', latestCapturedAt)
+          .order('captured_at', { ascending: false })
+      : Promise.resolve({ data: null }),
+  ]);
+
+  // Build signal maps
+  const previousPositions = new Map<number, number>();
+  if (previousResult.data) {
+    for (const snap of previousResult.data) {
+      previousPositions.set(snap.term_id, snap.position);
+    }
+  }
+
+  const regionCounts = new Map<number, Set<number>>();
+  if (regionResult.data) {
+    for (const snap of regionResult.data) {
+      if (!regionCounts.has(snap.term_id)) {
+        regionCounts.set(snap.term_id, new Set());
+      }
+      regionCounts.get(snap.term_id)!.add(snap.woeid);
+    }
+  }
+
+  const durationMap = new Map<number, number>();
+  if (durationResult.data) {
+    const termSnapshots = new Map<number, Set<number>>();
+    for (const snap of durationResult.data) {
+      if (!termSnapshots.has(snap.term_id)) {
+        termSnapshots.set(snap.term_id, new Set());
+      }
+      const snapTime = new Date(snap.captured_at);
+      snapTime.setUTCMinutes(0, 0, 0);
+      termSnapshots.get(snap.term_id)!.add(snapTime.getTime());
+    }
+
+    const currentHour = new Date(latestCapturedAt);
+    currentHour.setUTCMinutes(0, 0, 0);
+
+    for (const [termId, timestampSet] of termSnapshots) {
+      let consecutiveHours = 0;
+      for (let h = 0; h < 24; h++) {
+        const checkTime = currentHour.getTime() - h * 60 * 60 * 1000;
+        if (timestampSet.has(checkTime)) {
+          consecutiveHours++;
+        } else {
+          break;
+        }
+      }
+      if (consecutiveHours > 0) {
+        durationMap.set(termId, consecutiveHours);
+      }
+    }
+  }
+
+  // Check if 1-hour-ago data exists
+  const hasOneHourAgoData = snapshotsByTime.has(oneHourAgoIso) || (previousResult.data?.length ?? 0) > 0;
+
+  // Build results for each offset
+  const results = new Map<number, { capturedAt: string; trends: TrendItemWithSignals[] }>();
+
+  for (const offset of offsets) {
+    const actualTime = offsetToActualTime.get(offset);
+    if (!actualTime) continue;
+
+    const snapshots = snapshotsByTime.get(actualTime);
+    if (!snapshots || snapshots.length === 0) continue;
+
+    const trends: TrendItemWithSignals[] = deduplicateTrends(
+      snapshots.map((s: any) => {
+        const base: TrendItemWithSignals = {
+          position: s.position,
+          termId: s.term_id,
+          termText: s.term?.term_text || '',
+          tweetCount: s.tweet_count,
+        };
+
+        // Add signals only for offset=0
+        if (offset === 0) {
+          const prevPos = previousPositions.get(s.term_id);
+          base.rankChange = hasOneHourAgoData
+            ? (prevPos !== undefined ? prevPos - s.position : undefined)
+            : undefined;
+          base.durationHours = durationMap.get(s.term_id);
+          const regionCount = regionCounts.get(s.term_id)?.size;
+          base.regionCount = regionCount && regionCount > 1 ? regionCount : undefined;
+        }
+
+        return base;
+      })
+    );
+
+    results.set(offset, { capturedAt: actualTime, trends });
+  }
+
+  return { place, results };
+}

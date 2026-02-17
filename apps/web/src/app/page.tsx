@@ -1,8 +1,8 @@
-import { getLatestTrendsWithSignals, getTrendsAtOffset } from '@/lib/data';
+import { getTrendsForAllOffsets } from '@/lib/data';
 import { TrendList, UpdatedAt } from '@/components';
 import Link from 'next/link';
 import type { TrendItemWithSignals } from '@/lib/types';
-import { DEFAULT_DISPLAY_OFFSETS, OFFSET_LABELS, type ValidOffset } from '@/lib/constants';
+import { DEFAULT_DISPLAY_OFFSETS, OFFSET_LABELS } from '@/lib/constants';
 
 // ISR: 600 seconds (10 minutes)
 export const revalidate = 600;
@@ -11,26 +11,36 @@ export const revalidate = 600;
 const JAPAN_WOEID = 23424856;
 
 export default async function HomePage() {
-  // Fetch all time periods in parallel (8 offsets)
+  // Optimized: Fetch all offsets in ~5 queries instead of 37
   const offsets = DEFAULT_DISPLAY_OFFSETS;
-  const fetchPromises = offsets.map(offset =>
-    offset === 0
-      ? getLatestTrendsWithSignals(JAPAN_WOEID)
-      : getTrendsAtOffset(JAPAN_WOEID, offset)
-  );
+  const data = await getTrendsForAllOffsets(JAPAN_WOEID, offsets);
 
-  const results = await Promise.all(fetchPromises);
+  if (!data) {
+    return (
+      <div className="text-center py-12">
+        <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-100 mb-4">
+          データを取得できませんでした
+        </h1>
+        <p className="text-zinc-500">
+          しばらく経ってから再度お試しください
+        </p>
+      </div>
+    );
+  }
 
-  // Build column data
-  const columns = offsets.map((offset, index) => ({
-    offset,
-    label: OFFSET_LABELS[offset],
-    data: results[index],
-    showSignals: offset === 0,
-  }));
+  // Build column data from optimized results
+  const columns = offsets.map(offset => {
+    const result = data.results.get(offset);
+    return {
+      offset,
+      label: OFFSET_LABELS[offset],
+      data: result ? { capturedAt: result.capturedAt, trends: result.trends } : null,
+      showSignals: offset === 0,
+    };
+  });
 
   // Check if we have any data
-  const currentData = results[0];
+  const currentData = data.results.get(0);
   if (!currentData) {
     return (
       <div className="text-center py-12">
