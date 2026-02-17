@@ -1,8 +1,11 @@
 'use client';
 
+// Position 51 represents "圏外" (out of ranking)
+const OUT_OF_RANK_POSITION = 51;
+
 interface DataPoint {
   capturedAt: string;
-  position: number;
+  position: number | null; // null = 圏外
 }
 
 interface PositionChartProps {
@@ -23,42 +26,72 @@ export function PositionChart({ data, height = 200 }: PositionChartProps) {
   const chartWidth = 800;
   const chartHeight = height;
 
-  // Calculate dynamic Y-axis range based on data
-  const positions = data.map(d => d.position);
-  const dataMin = Math.min(...positions);
-  const dataMax = Math.max(...positions);
+  // Check if we have any out-of-rank data
+  const hasOutOfRank = data.some(d => d.position === null);
 
-  // Add padding of 2, but clamp to 1-50
+  // Calculate dynamic Y-axis range based on data
+  const validPositions = data.filter(d => d.position !== null).map(d => d.position as number);
+  const dataMin = validPositions.length > 0 ? Math.min(...validPositions) : 1;
+  const dataMax = validPositions.length > 0 ? Math.max(...validPositions) : 50;
+
+  // Add padding of 2, but clamp to 1-50 (or 51 if we have out-of-rank)
   const minPos = Math.max(1, dataMin - 2);
-  const maxPos = Math.min(50, dataMax + 2);
+  const maxPos = hasOutOfRank ? OUT_OF_RANK_POSITION : Math.min(50, dataMax + 2);
 
   // Calculate points
   const points = data.map((d, i) => {
     const x = padding.left + (i / Math.max(data.length - 1, 1)) * (chartWidth - padding.left - padding.right);
-    const y = padding.top + ((d.position - minPos) / (maxPos - minPos)) * (chartHeight - padding.top - padding.bottom);
-    return { x, y, position: d.position, time: d.capturedAt };
+    const effectivePosition = d.position ?? OUT_OF_RANK_POSITION;
+    const y = padding.top + ((effectivePosition - minPos) / (maxPos - minPos)) * (chartHeight - padding.top - padding.bottom);
+    return { x, y, position: d.position, time: d.capturedAt, isOutOfRank: d.position === null };
   });
 
-  // Create path
-  const pathD = points
-    .map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`)
-    .join(' ');
+  // Create path segments (separate lines for ranked vs out-of-rank transitions)
+  const pathSegments: string[] = [];
+  let currentSegment: string[] = [];
+  let lastRankedPoint: typeof points[0] | null = null;
+
+  points.forEach((p, i) => {
+    if (!p.isOutOfRank) {
+      if (currentSegment.length === 0) {
+        currentSegment.push(`M ${p.x} ${p.y}`);
+      } else {
+        currentSegment.push(`L ${p.x} ${p.y}`);
+      }
+      lastRankedPoint = p;
+    } else {
+      // Out of rank point - if we have a current segment, close it
+      if (currentSegment.length > 0) {
+        pathSegments.push(currentSegment.join(' '));
+        currentSegment = [];
+      }
+    }
+  });
+  if (currentSegment.length > 0) {
+    pathSegments.push(currentSegment.join(' '));
+  }
 
   // Y-axis labels - dynamic based on range
   const range = maxPos - minPos;
   const step = range <= 10 ? 2 : range <= 20 ? 5 : 10;
   const yLabels: number[] = [];
   for (let pos = Math.ceil(minPos / step) * step; pos <= maxPos; pos += step) {
-    if (pos >= minPos) yLabels.push(pos);
+    if (pos >= minPos && pos <= 50) yLabels.push(pos);
   }
-  // Always include min and max
+  // Always include min and max (but max might be 51 for 圏外)
   if (!yLabels.includes(minPos)) yLabels.unshift(minPos);
-  if (!yLabels.includes(maxPos)) yLabels.push(maxPos);
+  if (dataMax <= 50 && !yLabels.includes(Math.min(50, dataMax + 2))) {
+    const maxLabel = Math.min(50, dataMax + 2);
+    if (!yLabels.includes(maxLabel)) yLabels.push(maxLabel);
+  }
 
   // X-axis labels (show a few time labels)
   const xLabelIndices = data.length <= 6
     ? data.map((_, i) => i)
     : [0, Math.floor(data.length / 2), data.length - 1];
+
+  // Y position for 圏外 label
+  const outOfRankY = padding.top + ((OUT_OF_RANK_POSITION - minPos) / (maxPos - minPos)) * (chartHeight - padding.top - padding.bottom);
 
   return (
     <div className="bg-zinc-50 dark:bg-zinc-900 rounded-lg p-4">
@@ -93,6 +126,29 @@ export function PositionChart({ data, height = 200 }: PositionChartProps) {
           );
         })}
 
+        {/* 圏外 line and label */}
+        {hasOutOfRank && (
+          <g>
+            <line
+              x1={padding.left}
+              y1={outOfRankY}
+              x2={chartWidth - padding.right}
+              y2={outOfRankY}
+              stroke="currentColor"
+              className="text-zinc-300 dark:text-zinc-600"
+              strokeDasharray="2 2"
+            />
+            <text
+              x={padding.left - 8}
+              y={outOfRankY + 4}
+              textAnchor="end"
+              className="text-xs fill-zinc-400"
+            >
+              圏外
+            </text>
+          </g>
+        )}
+
         {/* X-axis labels */}
         {xLabelIndices.map((i) => {
           const p = points[i];
@@ -115,16 +171,19 @@ export function PositionChart({ data, height = 200 }: PositionChartProps) {
           );
         })}
 
-        {/* Line */}
-        <path
-          d={pathD}
-          fill="none"
-          stroke="currentColor"
-          className="text-blue-500"
-          strokeWidth={2}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
+        {/* Lines (solid for ranked segments) */}
+        {pathSegments.map((d, i) => (
+          <path
+            key={i}
+            d={d}
+            fill="none"
+            stroke="currentColor"
+            className="text-blue-500"
+            strokeWidth={2}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        ))}
 
         {/* Data points */}
         {points.map((p, i) => (
@@ -134,7 +193,7 @@ export function PositionChart({ data, height = 200 }: PositionChartProps) {
             cy={p.y}
             r={4}
             fill="currentColor"
-            className="text-blue-500"
+            className={p.isOutOfRank ? "text-zinc-400" : "text-blue-500"}
           />
         ))}
 
@@ -165,7 +224,7 @@ export function PositionChart({ data, height = 200 }: PositionChartProps) {
                 textAnchor="middle"
                 className="text-xs fill-white dark:fill-zinc-900 font-medium"
               >
-                {p.position}位
+                {p.isOutOfRank ? '圏外' : `${p.position}位`}
               </text>
             </g>
           </g>

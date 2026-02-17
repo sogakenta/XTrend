@@ -506,6 +506,7 @@ export async function getTermById(termId: number): Promise<Term | null> {
 
 /**
  * Get term history (position changes over time)
+ * Fills missing hours with position: null (圏外)
  */
 export async function getTermHistory(termId: number, hours: number = 24): Promise<TermHistory | null> {
   // Get term info
@@ -516,28 +517,98 @@ export async function getTermHistory(termId: number, hours: number = 24): Promis
   const now = new Date();
   const since = new Date(now.getTime() - hours * 60 * 60 * 1000);
 
-  // Get snapshots for this term
-  const { data: snapshots, error } = await supabase
-    .from('trend_snapshot')
-    .select(`
-      captured_at,
-      position,
-      woeid,
-      place:woeid (name_ja, sort_order)
-    `)
-    .eq('term_id', termId)
-    .gte('captured_at', since.toISOString())
-    .order('captured_at', { ascending: true });
+  // Get snapshots for this term and available times in parallel
+  const [snapshotsResult, availableTimesResult] = await Promise.all([
+    supabase
+      .from('trend_snapshot')
+      .select(`
+        captured_at,
+        position,
+        woeid,
+        place:woeid (name_ja, sort_order)
+      `)
+      .eq('term_id', termId)
+      .gte('captured_at', since.toISOString())
+      .order('captured_at', { ascending: true }),
+    // Get distinct captured_at times in the range (using position=1 for efficiency)
+    supabase
+      .from('trend_snapshot')
+      .select('captured_at, woeid, place:woeid (name_ja, sort_order)')
+      .eq('position', 1)
+      .gte('captured_at', since.toISOString())
+      .order('captured_at', { ascending: true }),
+  ]);
 
-  if (error) throw new Error(`Failed to fetch term history: ${error.message}`);
+  if (snapshotsResult.error) throw new Error(`Failed to fetch term history: ${snapshotsResult.error.message}`);
 
-  const history = (snapshots || []).map((s: any) => ({
-    capturedAt: s.captured_at,
-    position: s.position,
-    woeid: s.woeid,
-    placeName: s.place?.name_ja || '',
-    sortOrder: s.place?.sort_order ?? 100,
-  }));
+  const snapshots = snapshotsResult.data || [];
+  const availableTimes = availableTimesResult.data || [];
+
+  // Build a map of available times per woeid
+  const timesByWoeid = new Map<number, Set<string>>();
+  const placeInfoByWoeid = new Map<number, { name_ja: string; sort_order: number }>();
+
+  for (const at of availableTimes) {
+    if (!timesByWoeid.has(at.woeid)) {
+      timesByWoeid.set(at.woeid, new Set());
+      placeInfoByWoeid.set(at.woeid, {
+        name_ja: (at.place as any)?.name_ja || '',
+        sort_order: (at.place as any)?.sort_order ?? 100,
+      });
+    }
+    timesByWoeid.get(at.woeid)!.add(at.captured_at);
+  }
+
+  // Build a map of actual positions: woeid -> capturedAt -> position
+  const positionMap = new Map<number, Map<string, number>>();
+  for (const s of snapshots) {
+    if (!positionMap.has(s.woeid)) {
+      positionMap.set(s.woeid, new Map());
+      // Also capture place info from actual data
+      placeInfoByWoeid.set(s.woeid, {
+        name_ja: (s.place as any)?.name_ja || '',
+        sort_order: (s.place as any)?.sort_order ?? 100,
+      });
+    }
+    positionMap.get(s.woeid)!.set(s.captured_at, s.position);
+  }
+
+  // Get woeids that have actual data for this term
+  const woeidsWithData = new Set(snapshots.map((s: any) => s.woeid));
+
+  // Build complete history with gaps filled as null (圏外)
+  const history: Array<{
+    capturedAt: string;
+    position: number | null;
+    woeid: number;
+    placeName: string;
+    sortOrder: number;
+  }> = [];
+
+  for (const woeid of woeidsWithData) {
+    const times = timesByWoeid.get(woeid);
+    const positions = positionMap.get(woeid);
+    const placeInfo = placeInfoByWoeid.get(woeid);
+
+    if (!times || !positions || !placeInfo) continue;
+
+    // Sort times chronologically
+    const sortedTimes = Array.from(times).sort();
+
+    for (const capturedAt of sortedTimes) {
+      const position = positions.get(capturedAt) ?? null; // null = 圏外
+      history.push({
+        capturedAt,
+        position,
+        woeid,
+        placeName: placeInfo.name_ja,
+        sortOrder: placeInfo.sort_order,
+      });
+    }
+  }
+
+  // Sort by capturedAt
+  history.sort((a, b) => a.capturedAt.localeCompare(b.capturedAt));
 
   return { term, history };
 }

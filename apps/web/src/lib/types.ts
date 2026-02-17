@@ -58,7 +58,7 @@ export interface TermHistory {
   term: Term;
   history: {
     capturedAt: string;
-    position: number;
+    position: number | null; // null = 圏外 (out of ranking)
     woeid: number;
     placeName: string;
     sortOrder: number;
