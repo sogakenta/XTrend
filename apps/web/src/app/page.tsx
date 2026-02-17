@@ -1,6 +1,5 @@
 import { getTrendsForAllOffsets } from '@/lib/data';
-import { TrendList, UpdatedAt } from '@/components';
-import Link from 'next/link';
+import { ExpandableTrendList, UpdatedAt } from '@/components';
 import type { TrendItemWithSignals } from '@/lib/types';
 import { DEFAULT_DISPLAY_OFFSETS, OFFSET_LABELS } from '@/lib/constants';
 
@@ -74,22 +73,10 @@ export default async function HomePage() {
               </h2>
             </div>
             {data && data.trends.length > 0 ? (
-              <>
-                <TrendList
-                  trends={data.trends.slice(0, 20) as TrendItemWithSignals[]}
-                  showSignals={showSignals}
-                />
-                {data.trends.length > 20 && (
-                  <div className="mt-4 text-center">
-                    <Link
-                      href={`/place/jp?offset=${offset}`}
-                      className="text-sm text-blue-600 dark:text-blue-400 hover:underline"
-                    >
-                      50位まで見る →
-                    </Link>
-                  </div>
-                )}
-              </>
+              <ExpandableTrendList
+                trends={data.trends as TrendItemWithSignals[]}
+                showSignals={showSignals}
+              />
             ) : (
               <p className="text-zinc-500 text-sm py-4">データなし</p>
             )}
@@ -108,22 +95,10 @@ export default async function HomePage() {
                 </h2>
               </div>
               {data && data.trends.length > 0 ? (
-                <>
-                  <TrendList
-                    trends={data.trends.slice(0, 20) as TrendItemWithSignals[]}
-                    showSignals={showSignals}
-                  />
-                  {data.trends.length > 20 && (
-                    <div className="mt-4 text-center">
-                      <Link
-                        href={`/place/jp?offset=${offset}`}
-                        className="text-sm text-blue-600 dark:text-blue-400 hover:underline"
-                      >
-                        50位まで見る →
-                      </Link>
-                    </div>
-                  )}
-                </>
+                <ExpandableTrendList
+                  trends={data.trends as TrendItemWithSignals[]}
+                  showSignals={showSignals}
+                />
               ) : (
                 <p className="text-zinc-500 text-sm py-4">データなし</p>
               )}

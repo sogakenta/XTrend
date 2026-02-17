@@ -1,6 +1,7 @@
 export { Header } from './Header';
 export { Sidebar } from './Sidebar';
 export { TrendList } from './TrendList';
+export { ExpandableTrendList } from './ExpandableTrendList';
 export { TrendCard } from './TrendCard';
 export { TrendColumn } from './TrendColumn';
 export { UpdatedAt } from './UpdatedAt';
