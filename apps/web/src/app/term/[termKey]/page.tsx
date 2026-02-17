@@ -159,7 +159,7 @@ export default async function TermPage({ params, searchParams }: PageProps) {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
-                  {history.map((h, i) => (
+                  {[...history].reverse().map((h, i) => (
                     <tr key={i}>
                       <td className="py-2 text-zinc-700 dark:text-zinc-300">
                         {new Date(h.capturedAt).toLocaleString('ja-JP', {
