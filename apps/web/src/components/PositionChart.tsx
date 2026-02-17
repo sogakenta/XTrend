@@ -34,8 +34,8 @@ export function PositionChart({ data, height = 200 }: PositionChartProps) {
   const dataMin = validPositions.length > 0 ? Math.min(...validPositions) : 1;
   const dataMax = validPositions.length > 0 ? Math.max(...validPositions) : 50;
 
-  // Add padding of 2, but clamp to 1-50 (or 51 if we have out-of-rank)
-  const minPos = Math.max(1, dataMin - 2);
+  // Always show from position 1, extend to 圏外 if needed
+  const minPos = 1;
   const maxPos = hasOutOfRank ? OUT_OF_RANK_POSITION : Math.min(50, dataMax + 2);
 
   // Helper to calculate Y position
@@ -60,12 +60,11 @@ export function PositionChart({ data, height = 200 }: PositionChartProps) {
   const range = maxPos - minPos;
   const step = range <= 10 ? 2 : range <= 20 ? 5 : 10;
 
-  // Generate candidate labels
+  // Generate candidate labels - always include 1位
   const candidateLabels: Array<{ pos: number; label: string; isOutOfRank: boolean }> = [];
-  for (let pos = Math.ceil(minPos / step) * step; pos <= 50; pos += step) {
-    if (pos >= minPos) {
-      candidateLabels.push({ pos, label: `${pos}位`, isOutOfRank: false });
-    }
+  candidateLabels.push({ pos: 1, label: '1位', isOutOfRank: false });
+  for (let pos = step; pos <= 50; pos += step) {
+    candidateLabels.push({ pos, label: `${pos}位`, isOutOfRank: false });
   }
   // Add 圏外 if needed
   if (hasOutOfRank) {
