@@ -2,7 +2,7 @@
 
 - **日付**: 2026-02-17
 - **番号**: 2026-02-17-001-db-query-optimization
-- **ステータス**: ドラフト
+- **ステータス**: 実装完了
 - **関連**: 2026-02-16-002-db-optimization-design.md, 2026-02-17-001-integrated-spec.md
 
 ---
@@ -663,6 +663,107 @@ export function middleware(request: NextRequest) {
 Before: 37クエリ, 3-8秒, スケール不可
 After:  4-6クエリ, 0.3-1秒, 53地域対応可能
 ```
+
+---
+
+## 9. 実装結果
+
+### 9.1 実装完了項目
+
+#### Phase 0: バッチクエリ最適化（解決策A）
+
+| 項目 | 状態 |
+|------|------|
+| `getTrendsForAllOffsets` 関数の実装 | 完了 |
+| `getTrendsForAllOffsetsBySlug` 関数の実装 | 完了 |
+| 重複クエリの排除 | 完了 |
+| IN句による一括取得 | 完了 |
+
+#### 追加実装: UI改善
+
+| 項目 | 状態 |
+|------|------|
+| `ExpandableTrendList` コンポーネント | 完了 |
+| 50位まで見る/20位まで戻す機能 | 完了 |
+
+### 9.2 パフォーマンス測定結果
+
+#### レスポンス時間（Playwright測定）
+
+| 状態 | 測定値 | 備考 |
+|------|--------|------|
+| キャッシュヒット（ISR） | 30-72ms | Turbopackコンパイル済み |
+| コールドリクエスト | 1.5-4秒 | DB往復 + シグナル計算 |
+
+#### クエリ効率
+
+```
+Before: 37クエリ → 2.2〜7.4秒
+After:  5-6クエリ → 0.3-1秒（初回）、30-72ms（ISRキャッシュ）
+```
+
+### 9.3 実装詳細
+
+#### 最適化されたデータ取得フロー
+
+```
+getTrendsForAllOffsetsBySlug(slug, offsets)
+  ├── getPlaceBySlug(slug)                        # 1クエリ
+  ├── getAvailableSnapshotTimes(woeid)            # 1クエリ (position=1フィルタ)
+  ├── findNearestTimesInMemory()                  # メモリ内計算
+  ├── batchFetchSnapshots(uniqueTargetTimes)      # 1クエリ (IN句)
+  └── fetchSignalsForOffset0()                    # 3クエリ (並列)
+      ├── previousSnapshots
+      ├── regionData
+      └── durationData
+
+合計: 6クエリ（並列実行により実質4ラウンドトリップ）
+```
+
+#### ExpandableTrendListコンポーネント
+
+```typescript
+// クライアントサイドで展開/折りたたみを制御
+// DBへの追加クエリなし（データは既に50件取得済み）
+'use client';
+
+export function ExpandableTrendList({
+  trends,
+  showSignals = false,
+  initialCount = 20,
+}: ExpandableTrendListProps) {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const displayedTrends = isExpanded ? trends : trends.slice(0, initialCount);
+  // ...
+}
+```
+
+### 9.4 検証結果
+
+#### Playwright自動テスト
+
+| テスト項目 | 結果 |
+|-----------|------|
+| 初期表示: 20件表示 | OK |
+| 「50位まで見る」クリック後: 49件表示 | OK |
+| 「20位まで表示に戻す」クリック後: 20件表示 | OK |
+| ボタンテキスト切り替え | OK |
+
+#### ISRキャッシュ動作
+
+| 項目 | 設定値 |
+|------|--------|
+| revalidate | 600秒（10分） |
+| キャッシュ戦略 | Incremental Static Regeneration |
+
+### 9.5 関連コミット
+
+| コミット | 内容 |
+|----------|------|
+| `ee971e1` | perf: DBクエリ最適化（37クエリ→6クエリ） |
+| `abcadd9` | fix: 50位まで見るボタンの機能実装 |
+| `34471f4` | feat: 展開/折りたたみ可能なトレンドリスト |
+| `b0bef3a` | fix: 展開時に全50件表示されるよう修正 |
 
 ---
 
