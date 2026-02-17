@@ -21,15 +21,7 @@ export function ExpandableTrendList({
 
   return (
     <div>
-      <div
-        className="transition-all duration-300 ease-in-out overflow-hidden"
-        style={{
-          // Smooth height transition
-          maxHeight: isExpanded ? `${trends.length * 60}px` : `${initialCount * 60}px`,
-        }}
-      >
-        <TrendList trends={displayedTrends} showSignals={showSignals} />
-      </div>
+      <TrendList trends={displayedTrends} showSignals={showSignals} />
 
       {hasMore && (
         <div className="mt-4 text-center">
