@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 50">
+  <defs>
+    <linearGradient id="trendGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#3b82f6"/>
+      <stop offset="100%" style="stop-color:#8b5cf6"/>
+    </linearGradient>
+  </defs>
+  <!-- Trend arrow icon -->
+  <g transform="translate(5, 10)">
+    <path d="M0 25 L12 10 L24 18 L30 5"
+          stroke="url(#trendGradient)"
+          stroke-width="3"
+          fill="none"
+          stroke-linecap="round"
+          stroke-linejoin="round"/>
+    <circle cx="30" cy="5" r="3" fill="#8b5cf6"/>
+  </g>
+  <!-- TrendaX text -->
+  <text x="45" y="35" font-family="system-ui, -apple-system, sans-serif" font-size="28" font-weight="700" fill="#18181b">
+    Trenda<tspan fill="url(#trendGradient)">X</tspan>
+  </text>
+</svg>

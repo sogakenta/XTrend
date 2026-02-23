@@ -119,7 +119,7 @@ export function Sidebar({ places }: SidebarProps) {
       >
         <div className="p-4 border-b border-zinc-200 dark:border-zinc-800">
           <Link href="/" className="text-xl font-bold text-zinc-900 dark:text-zinc-100" onClick={() => setIsOpen(false)}>
-            XTrend
+            Trenda<span className="bg-gradient-to-r from-blue-500 to-violet-500 bg-clip-text text-transparent">X</span>
           </Link>
         </div>
         <NavContent />
@@ -138,7 +138,7 @@ export function Sidebar({ places }: SidebarProps) {
           {showExpanded ? (
             <>
               <Link href="/" className="font-bold text-xl text-zinc-900 dark:text-zinc-100">
-                XTrend
+                Trenda<span className="bg-gradient-to-r from-blue-500 to-violet-500 bg-clip-text text-transparent">X</span>
               </Link>
               <button
                 onClick={toggleCollapsed}
@@ -157,7 +157,18 @@ export function Sidebar({ places }: SidebarProps) {
               </button>
             </>
           ) : (
-            <span className="font-bold text-lg text-zinc-900 dark:text-zinc-100">X</span>
+            <Link href="/">
+              <svg className="w-8 h-8" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <defs>
+                  <linearGradient id="iconGrad" x1="0%" y1="100%" x2="100%" y2="0%">
+                    <stop offset="0%" stopColor="#3b82f6"/>
+                    <stop offset="100%" stopColor="#8b5cf6"/>
+                  </linearGradient>
+                </defs>
+                <rect width="32" height="32" rx="6" fill="url(#iconGrad)"/>
+                <text x="16" y="24" fontFamily="system-ui, -apple-system, sans-serif" fontSize="22" fontWeight="700" fill="white" textAnchor="middle">X</text>
+              </svg>
+            </Link>
           )}
         </div>
 

@@ -31,7 +31,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   }
 
   return {
-    title: data.term.term_text + ' - XTrend',
+    title: data.term.term_text + ' - TrendaX',
     description: '「' + data.term.term_text + '」のトレンド推移',
   };
 }

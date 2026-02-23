@@ -21,7 +21,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   }
 
   return {
-    title: `${place.name_ja}のトレンド - XTrend`,
+    title: `${place.name_ja}のトレンド - TrendaX`,
     description: `${place.name_ja}で話題のトレンドをリアルタイムで確認`,
   };
 }

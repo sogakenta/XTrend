@@ -513,9 +513,20 @@ export async function getTermHistory(termId: number, hours: number = 24): Promis
   const term = await getTermById(termId);
   if (!term) return null;
 
-  // Calculate time range
-  const now = new Date();
-  const since = new Date(now.getTime() - hours * 60 * 60 * 1000);
+  // Get latest captured_at from database (not current time)
+  // This ensures we show data even when ingestion is delayed
+  const { data: latestSnapshot } = await supabase
+    .from('trend_snapshot')
+    .select('captured_at')
+    .order('captured_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (!latestSnapshot) return null;
+
+  // Calculate time range based on latest snapshot, not current time
+  const latestTime = new Date(latestSnapshot.captured_at);
+  const since = new Date(latestTime.getTime() - hours * 60 * 60 * 1000);
 
   // Get snapshots for this term and available times in parallel
   const [snapshotsResult, availableTimesResult] = await Promise.all([

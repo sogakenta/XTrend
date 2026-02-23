@@ -15,8 +15,11 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "XTrend - Xトレンド分析",
-  description: "日本のXトレンドをリアルタイムで分析",
+  title: "TrendaX - Xトレンド分析",
+  description: "日本のXトレンドをリアルタイムで分析・可視化",
+  icons: {
+    icon: "/icon.svg",
+  },
 };
 
 export default async function RootLayout({
