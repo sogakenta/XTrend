@@ -1,10 +1,31 @@
+import type { Metadata } from 'next';
 import { getTrendsForAllOffsets } from '@/lib/data';
 import { ExpandableTrendList, UpdatedAt } from '@/components';
 import type { TrendItemWithSignals } from '@/lib/types';
 import { DEFAULT_DISPLAY_OFFSETS, OFFSET_LABELS } from '@/lib/constants';
+import { siteConfig } from '@/lib/seo';
 
 // ISR: 600 seconds (10 minutes)
 export const revalidate = 600;
+
+export const metadata: Metadata = {
+  title: {
+    absolute: siteConfig.title,
+  },
+  description: siteConfig.description,
+  openGraph: {
+    title: siteConfig.title,
+    description: siteConfig.description,
+    url: '/',
+  },
+  twitter: {
+    title: siteConfig.title,
+    description: siteConfig.description,
+  },
+  alternates: {
+    canonical: '/',
+  },
+};
 
 // Japan WOEID
 const JAPAN_WOEID = 23424856;

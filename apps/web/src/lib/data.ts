@@ -1108,3 +1108,50 @@ async function getTrendsForAllOffsetsInternal(
 
   return { place, results };
 }
+
+// ============================================================
+// Sitemap data functions
+// ============================================================
+
+/**
+ * Get total count of terms for sitemap pagination
+ */
+export async function getTermCount(): Promise<number> {
+  const { count, error } = await supabase
+    .from('term')
+    .select('*', { count: 'exact', head: true });
+
+  if (error) throw new Error(`Failed to fetch term count: ${error.message}`);
+  return count ?? 0;
+}
+
+/**
+ * Get paginated terms for sitemap generation
+ */
+export async function getTermsForSitemap(
+  offset: number,
+  limit: number
+): Promise<Array<{ term_id: number; updated_at?: string }>> {
+  const { data, error } = await supabase
+    .from('term')
+    .select('term_id')
+    .order('term_id', { ascending: true })
+    .range(offset, offset + limit - 1);
+
+  if (error) throw new Error(`Failed to fetch terms for sitemap: ${error.message}`);
+  return data || [];
+}
+
+/**
+ * Get all place slugs for sitemap
+ */
+export async function getPlaceSlugsForSitemap(): Promise<Array<{ slug: string }>> {
+  const { data, error } = await supabase
+    .from('place')
+    .select('slug')
+    .eq('is_active', true)
+    .order('sort_order');
+
+  if (error) throw new Error(`Failed to fetch place slugs: ${error.message}`);
+  return data || [];
+}
