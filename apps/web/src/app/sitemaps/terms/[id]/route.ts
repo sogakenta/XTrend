@@ -12,7 +12,13 @@ interface RouteContext {
  */
 export async function GET(_request: Request, context: RouteContext) {
   const { id } = await context.params;
-  const pageNum = parseInt(id, 10);
+
+  // Expect format: "1.xml", "2.xml", etc.
+  if (!id.endsWith('.xml')) {
+    return new NextResponse('Not Found', { status: 404 });
+  }
+
+  const pageNum = parseInt(id.replace('.xml', ''), 10);
 
   if (isNaN(pageNum) || pageNum < 1) {
     return new NextResponse('Not Found', { status: 404 });
