@@ -819,7 +819,7 @@ export async function getTrendsForAllOffsets(
   }
 
   // Check if 1-hour-ago data exists
-  const hasOneHourAgoData = snapshotsByTime.has(oneHourAgoIso) || previousResult.data?.length > 0;
+  const hasOneHourAgoData = snapshotsByTime.has(oneHourAgoIso) || (previousResult.data?.length ?? 0) > 0;
 
   // Build results for each offset
   const results = new Map<number, { capturedAt: string; trends: TrendItemWithSignals[] }>();
