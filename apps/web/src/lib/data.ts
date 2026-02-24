@@ -1114,33 +1114,21 @@ async function getTrendsForAllOffsetsInternal(
 // ============================================================
 
 /**
- * Get total count of terms for sitemap pagination
+ * Get maximum term_id for sitemap generation
+ * Used to generate URLs from 1 to maxTermId without fetching all records
  */
-export async function getTermCount(): Promise<number> {
-  const { count, error } = await supabase
-    .from('term')
-    .select('*', { count: 'exact', head: true });
-
-  if (error) throw new Error(`Failed to fetch term count: ${error.message}`);
-  return count ?? 0;
-}
-
-/**
- * Get paginated terms for sitemap generation
- */
-export async function getTermsForSitemap(
-  offset: number,
-  limit: number
-): Promise<Array<{ term_id: number; updated_at?: string }>> {
+export async function getMaxTermId(): Promise<number> {
   const { data, error } = await supabase
     .from('term')
     .select('term_id')
-    .order('term_id', { ascending: true })
-    .range(offset, offset + limit - 1);
+    .order('term_id', { ascending: false })
+    .limit(1)
+    .single();
 
-  if (error) throw new Error(`Failed to fetch terms for sitemap: ${error.message}`);
-  return data || [];
+  if (error) throw new Error(`Failed to fetch max term_id: ${error.message}`);
+  return data?.term_id ?? 0;
 }
+
 
 /**
  * Get all place slugs for sitemap

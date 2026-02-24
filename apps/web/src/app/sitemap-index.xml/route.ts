@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getTermCount } from '@/lib/data';
+import { getMaxTermId } from '@/lib/data';
 import { getSiteUrl, sitemapConfig } from '@/lib/seo';
 
 /**
@@ -13,8 +13,8 @@ import { getSiteUrl, sitemapConfig } from '@/lib/seo';
  */
 export async function GET() {
   const baseUrl = getSiteUrl();
-  const termCount = await getTermCount();
-  const termSitemapCount = Math.ceil(termCount / sitemapConfig.termChunkSize);
+  const maxTermId = await getMaxTermId();
+  const termSitemapCount = Math.ceil(maxTermId / sitemapConfig.termChunkSize);
   const lastmod = new Date().toISOString();
 
   const sitemapEntries = [

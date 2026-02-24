@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getTermsForSitemap } from '@/lib/data';
+import { getMaxTermId } from '@/lib/data';
 import { getSiteUrl, sitemapConfig } from '@/lib/seo';
 
 interface RouteContext {
@@ -9,6 +9,9 @@ interface RouteContext {
 /**
  * Terms sitemap (paginated)
  * GET /sitemaps/terms/1.xml, /sitemaps/terms/2.xml, ...
+ *
+ * Generates URLs from term_id 1 to maxTermId using a loop.
+ * Each page contains up to termChunkSize (10000) URLs.
  */
 export async function GET(_request: Request, context: RouteContext) {
   const { id } = await context.params;
@@ -26,28 +29,31 @@ export async function GET(_request: Request, context: RouteContext) {
 
   const baseUrl = getSiteUrl();
   const chunkSize = sitemapConfig.termChunkSize;
-  const offset = (pageNum - 1) * chunkSize;
+  const maxTermId = await getMaxTermId();
 
-  const terms = await getTermsForSitemap(offset, chunkSize);
+  // Calculate start and end term_id for this page
+  const startId = (pageNum - 1) * chunkSize + 1;
+  const endId = Math.min(pageNum * chunkSize, maxTermId);
 
-  if (terms.length === 0) {
+  // Return 404 if this page is beyond the max
+  if (startId > maxTermId) {
     return new NextResponse('Not Found', { status: 404 });
   }
 
-  const urls = terms
-    .map(
-      (term) => `
+  // Generate URLs for term_id range
+  const urls: string[] = [];
+  for (let termId = startId; termId <= endId; termId++) {
+    urls.push(`
   <url>
-    <loc>${baseUrl}/term/t-${term.term_id}</loc>
+    <loc>${baseUrl}/term/t-${termId}</loc>
     <changefreq>daily</changefreq>
     <priority>0.5</priority>
-  </url>`
-    )
-    .join('');
+  </url>`);
+  }
 
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-${urls}
+${urls.join('')}
 </urlset>`;
 
   return new NextResponse(xml, {
