@@ -47,12 +47,12 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
     title,
     description,
     openGraph: {
-      title: title + ' | ' + siteConfig.name,
+      title: title + '｜' + siteConfig.title,
       description,
       url: canonicalUrl,
     },
     twitter: {
-      title: title + ' | ' + siteConfig.name,
+      title: title + '｜' + siteConfig.title,
       description,
     },
     alternates: {
