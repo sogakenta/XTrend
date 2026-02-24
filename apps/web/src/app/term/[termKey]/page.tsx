@@ -46,6 +46,15 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   return {
     title,
     description,
+    keywords: [
+      term.term_text,
+      term.term_text + ' トレンド',
+      term.term_text + ' X',
+      term.term_text + ' Twitter',
+      'Xトレンド',
+      'トレンド推移',
+      'TrendaX',
+    ],
     openGraph: {
       title: title + '｜' + siteConfig.title,
       description,
@@ -93,6 +102,19 @@ export default async function TermPage({ params, searchParams }: PageProps) {
   });
 
   const rangeLabel = hours === 168 ? '7日間' : '24時間';
+  // Calculate overall summary for SEO text content
+  const allRankedHistory = data.history.filter(h => h.position !== null);
+  const overallBestRank = allRankedHistory.length > 0 
+    ? Math.min(...allRankedHistory.map(h => h.position as number))
+    : null;
+  const bestRankEntry = allRankedHistory.find(h => h.position === overallBestRank);
+  const totalRankInCount = allRankedHistory.length;
+  const latestRankIn = allRankedHistory.length > 0
+    ? allRankedHistory.reduce((latest, h) => 
+        new Date(h.capturedAt) > new Date(latest.capturedAt) ? h : latest
+      )
+    : null;
+
 
   return (
     <div className="max-w-4xl mx-auto">
@@ -100,9 +122,58 @@ export default async function TermPage({ params, searchParams }: PageProps) {
         <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-100 mb-2">
           {data.term.term_text}
         </h1>
-        <p className="text-sm text-zinc-500">
+        <p className="text-sm text-zinc-500 mb-4">
           過去{rangeLabel}の順位推移
         </p>
+        
+        {/* SEO: Auto-generated summary text */}
+        <div className="bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-xl p-5 mb-5">
+          <h2 className="text-lg font-bold text-zinc-900 dark:text-zinc-100 mb-2">
+            このページについて
+          </h2>
+          <p className="text-base text-zinc-800 dark:text-zinc-200 leading-relaxed">
+            「<a
+              href={`https://x.com/search?q=${encodeURIComponent(data.term.term_text)}&src=TrendaX`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-semibold text-blue-600 dark:text-blue-400 hover:underline"
+            >{data.term.term_text}</a>」の
+            <strong>X（旧Twitter）トレンド順位の推移</strong>をリアルタイムで追跡・可視化しています。
+            地域別のランキング変動をグラフで確認できます。
+          </p>
+          {overallBestRank !== null && (
+            <div className="mt-4 flex flex-wrap gap-3">
+              <span className="inline-flex items-center px-3 py-1.5 bg-white dark:bg-zinc-800 rounded-full text-sm font-medium text-zinc-900 dark:text-zinc-100 shadow-sm">
+                🏆 最高 {overallBestRank}位{bestRankEntry?.placeName && `（${bestRankEntry.placeName}）`}
+              </span>
+              <span className="inline-flex items-center px-3 py-1.5 bg-white dark:bg-zinc-800 rounded-full text-sm font-medium text-zinc-900 dark:text-zinc-100 shadow-sm">
+                📊 {totalRankInCount}回ランクイン
+              </span>
+              {latestRankIn && (
+                <span className="inline-flex items-center px-3 py-1.5 bg-white dark:bg-zinc-800 rounded-full text-sm font-medium text-zinc-600 dark:text-zinc-400 shadow-sm">
+                  🕐 最新: {new Date(latestRankIn.capturedAt).toLocaleString('ja-JP', {
+                    timeZone: 'Asia/Tokyo',
+                    month: 'numeric',
+                    day: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  })}
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+        <a
+          href={`https://x.com/search?q=${encodeURIComponent(data.term.term_text)}&src=TrendaX`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-2 px-4 py-2 bg-black text-white text-sm font-medium rounded-full hover:bg-zinc-800 transition-colors dark:bg-white dark:text-black dark:hover:bg-zinc-200"
+        >
+          <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+          </svg>
+          Xでポストを確認
+        </a>
       </div>
 
       <div className="mb-6 flex gap-2">
