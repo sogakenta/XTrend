@@ -4,6 +4,7 @@ import Script from "next/script";
 import "./globals.css";
 import { Sidebar } from "@/components";
 import { getPlaces } from "@/lib/data";
+import { getSiteUrl, siteConfig } from "@/lib/seo";
 
 const GTM_ID = "GTM-KPNC6KHM";
 
@@ -18,10 +19,33 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "TrendaX - Xトレンド分析",
-  description: "日本のXトレンドをリアルタイムで分析・可視化",
+  metadataBase: new URL(getSiteUrl()),
+  title: {
+    default: siteConfig.title,
+    template: `%s | ${siteConfig.name}`,
+  },
+  description: siteConfig.description,
   icons: {
     icon: "/icon.svg",
+  },
+  openGraph: {
+    type: "website",
+    locale: siteConfig.locale,
+    siteName: siteConfig.name,
+    title: siteConfig.title,
+    description: siteConfig.description,
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: siteConfig.title,
+    description: siteConfig.description,
+  },
+  robots: {
+    index: true,
+    follow: true,
+  },
+  alternates: {
+    canonical: "/",
   },
 };
 

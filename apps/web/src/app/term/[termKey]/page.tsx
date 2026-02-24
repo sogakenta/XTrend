@@ -1,7 +1,8 @@
 import { notFound } from 'next/navigation';
-import { getTermHistory } from '@/lib/data';
+import { getTermById, getTermHistory } from '@/lib/data';
 import { PositionChart } from '@/components';
 import type { Metadata } from 'next';
+import { siteConfig } from '@/lib/seo';
 
 // ISR: 900 seconds
 export const revalidate = 900;
@@ -22,17 +23,41 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   const termId = parseTermKey(termKey);
 
   if (!termId) {
-    return { title: 'Not Found' };
+    return {
+      title: 'Not Found',
+      robots: { index: false, follow: false },
+    };
   }
 
-  const data = await getTermHistory(termId, 24);
-  if (!data) {
-    return { title: 'Not Found' };
+  // Use lightweight getTermById instead of heavy getTermHistory
+  const term = await getTermById(termId);
+  if (!term) {
+    return {
+      title: 'Not Found',
+      robots: { index: false, follow: false },
+    };
   }
+
+  const title = term.term_text + 'のトレンド推移';
+  const description = '「' + term.term_text + '」のXトレンド順位推移をグラフで確認。地域別の過去24時間・7日間の動きが見られます。';
+  // Always use canonical without query params to avoid duplicate content
+  const canonicalUrl = '/term/' + termKey;
 
   return {
-    title: data.term.term_text + ' - TrendaX',
-    description: '「' + data.term.term_text + '」のトレンド推移',
+    title,
+    description,
+    openGraph: {
+      title: title + ' | ' + siteConfig.name,
+      description,
+      url: canonicalUrl,
+    },
+    twitter: {
+      title: title + ' | ' + siteConfig.name,
+      description,
+    },
+    alternates: {
+      canonical: canonicalUrl,
+    },
   };
 }
 
@@ -123,13 +148,13 @@ export default async function TermPage({ params, searchParams }: PageProps) {
             <div className="mt-4 grid grid-cols-4 gap-4 text-center">
               <div className="bg-zinc-50 dark:bg-zinc-900 rounded-lg p-3">
                 <div className="text-2xl font-bold text-zinc-900 dark:text-zinc-100">
-                  {bestRank !== null ? `${bestRank}位` : '-'}
+                  {bestRank !== null ? bestRank + '位' : '-'}
                 </div>
                 <div className="text-xs text-zinc-500">最高順位</div>
               </div>
               <div className="bg-zinc-50 dark:bg-zinc-900 rounded-lg p-3">
                 <div className="text-2xl font-bold text-zinc-900 dark:text-zinc-100">
-                  {worstRank !== null ? `${worstRank}位` : '-'}
+                  {worstRank !== null ? worstRank + '位' : '-'}
                 </div>
                 <div className="text-xs text-zinc-500">最低順位</div>
               </div>
@@ -170,12 +195,12 @@ export default async function TermPage({ params, searchParams }: PageProps) {
                           minute: '2-digit',
                         })}
                       </td>
-                      <td className={`py-2 font-medium ${
+                      <td className={'py-2 font-medium ' + (
                         h.position === null
                           ? 'text-zinc-400 dark:text-zinc-500'
                           : 'text-zinc-900 dark:text-zinc-100'
-                      }`}>
-                        {h.position !== null ? `${h.position}位` : '圏外'}
+                      )}>
+                        {h.position !== null ? h.position + '位' : '圏外'}
                       </td>
                     </tr>
                   ))}

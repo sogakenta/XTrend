@@ -4,6 +4,7 @@ import { ExpandableTrendList, UpdatedAt } from '@/components';
 import { DEFAULT_DISPLAY_OFFSETS, OFFSET_LABELS } from '@/lib/constants';
 import type { Metadata } from 'next';
 import type { TrendItemWithSignals } from '@/lib/types';
+import { siteConfig } from '@/lib/seo';
 
 // ISR: 600 seconds (10 minutes)
 export const revalidate = 600;
@@ -17,12 +18,31 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   const place = await getPlaceBySlug(slug);
 
   if (!place) {
-    return { title: 'Not Found' };
+    return {
+      title: 'Not Found',
+      robots: { index: false, follow: false },
+    };
   }
 
+  const title = `${place.name_ja}のトレンド`;
+  const description = `${place.name_ja}で話題のXトレンドをリアルタイムで確認。過去のランキング推移も見られます。`;
+  const url = `/place/${slug}`;
+
   return {
-    title: `${place.name_ja}のトレンド - TrendaX`,
-    description: `${place.name_ja}で話題のトレンドをリアルタイムで確認`,
+    title,
+    description,
+    openGraph: {
+      title: `${title} | ${siteConfig.name}`,
+      description,
+      url,
+    },
+    twitter: {
+      title: `${title} | ${siteConfig.name}`,
+      description,
+    },
+    alternates: {
+      canonical: url,
+    },
   };
 }
 
