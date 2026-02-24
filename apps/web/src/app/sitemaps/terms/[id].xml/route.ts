@@ -8,7 +8,7 @@ interface RouteContext {
 
 /**
  * Terms sitemap (paginated)
- * GET /sitemaps/terms/1, /sitemaps/terms/2, ...
+ * GET /sitemaps/terms/1.xml, /sitemaps/terms/2.xml, ...
  */
 export async function GET(_request: Request, context: RouteContext) {
   const { id } = await context.params;

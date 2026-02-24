@@ -9,7 +9,7 @@ import { getSiteUrl, sitemapConfig } from '@/lib/seo';
  * Structure:
  * - /sitemaps/core.xml     - Homepage
  * - /sitemaps/places.xml   - Place pages
- * - /sitemaps/terms/1      - Term pages (paginated)
+ * - /sitemaps/terms/1.xml  - Term pages (paginated)
  */
 export async function GET() {
   const baseUrl = getSiteUrl();
@@ -36,7 +36,7 @@ export async function GET() {
   for (let i = 1; i <= termSitemapCount; i++) {
     sitemapEntries.push(`
   <sitemap>
-    <loc>${baseUrl}/sitemaps/terms/${i}</loc>
+    <loc>${baseUrl}/sitemaps/terms/${i}.xml</loc>
     <lastmod>${lastmod}</lastmod>
   </sitemap>`);
   }
