@@ -24,7 +24,7 @@ export function absoluteUrl(path: string): string {
 /** Default site metadata */
 export const siteConfig = {
   name: 'TrendaX',
-  title: 'TrendaX - Xのトレンド分析サイト',
+  title: 'TrendaX - Xリアルタイムトレンド分析サイト',
   description: '日本のXトレンドをリアルタイムで分析・可視化。過去のランキング推移や地域別トレンドを確認できます。',
   locale: 'ja_JP',
   twitterHandle: '@TrendaX',
