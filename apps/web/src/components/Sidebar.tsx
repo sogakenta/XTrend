@@ -14,7 +14,7 @@ const COLLAPSED_KEY = 'sidebar-collapsed';
 export function Sidebar({ places }: SidebarProps) {
   const pathname = usePathname();
   const [isOpen, setIsOpen] = useState(false);
-  const [isCollapsed, setIsCollapsed] = useState(false);
+  const [isCollapsed, setIsCollapsed] = useState(true);
   const [isHovered, setIsHovered] = useState(false);
 
   // Load collapsed state from localStorage after mount
