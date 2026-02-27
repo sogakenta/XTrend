@@ -1,0 +1,67 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1640" height="720" viewBox="0 0 820 360">
+  <defs>
+    <linearGradient id="bgGradient" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#1e1b4b"/>
+      <stop offset="50%" style="stop-color:#312e81"/>
+      <stop offset="100%" style="stop-color:#1e3a8a"/>
+    </linearGradient>
+    <linearGradient id="trendGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#3b82f6"/>
+      <stop offset="100%" style="stop-color:#8b5cf6"/>
+    </linearGradient>
+    <linearGradient id="glowGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#3b82f6;stop-opacity:0.3"/>
+      <stop offset="100%" style="stop-color:#8b5cf6;stop-opacity:0.1"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="820" height="360" fill="url(#bgGradient)"/>
+
+  <!-- Decorative elements -->
+  <circle cx="100" cy="300" r="150" fill="url(#glowGradient)" opacity="0.5"/>
+  <circle cx="720" cy="60" r="120" fill="url(#glowGradient)" opacity="0.5"/>
+
+  <!-- Grid pattern -->
+  <g opacity="0.1" stroke="#fff" stroke-width="0.5">
+    <line x1="0" y1="90" x2="820" y2="90"/>
+    <line x1="0" y1="180" x2="820" y2="180"/>
+    <line x1="0" y1="270" x2="820" y2="270"/>
+    <line x1="205" y1="0" x2="205" y2="360"/>
+    <line x1="410" y1="0" x2="410" y2="360"/>
+    <line x1="615" y1="0" x2="615" y2="360"/>
+  </g>
+
+  <!-- Trend chart decoration (background) -->
+  <g transform="translate(50, 200)" opacity="0.15">
+    <path d="M0 100 L80 70 L160 85 L240 40 L320 55 L400 20 L480 35 L560 5 L640 25 L720 -10"
+          stroke="#fff"
+          stroke-width="2"
+          fill="none"
+          stroke-linecap="round"
+          stroke-linejoin="round"/>
+  </g>
+
+  <!-- Main logo group - moved up -->
+  <g transform="translate(135, 43)">
+    <!-- Trend arrow icon (scaled up) -->
+    <g transform="translate(0, 17.5) scale(3.5)">
+      <path d="M0 25 L12 10 L24 18 L30 5"
+            stroke="url(#trendGradient)"
+            stroke-width="3"
+            fill="none"
+            stroke-linecap="round"
+            stroke-linejoin="round"/>
+      <circle cx="30" cy="5" r="3" fill="#8b5cf6"/>
+    </g>
+    <!-- TrendaX text -->
+    <text x="130" y="95" font-family="system-ui, -apple-system, sans-serif" font-size="100" font-weight="700" fill="#ffffff">
+      Trenda<tspan fill="url(#trendGradient)">X</tspan>
+    </text>
+  </g>
+
+  <!-- Tagline - moved up -->
+  <text x="410" y="173" font-family="system-ui, -apple-system, sans-serif" font-size="28" font-weight="400" fill="#ffffff" text-anchor="middle">
+    X(Twitter) Trend Analytics
+  </text>
+</svg>
