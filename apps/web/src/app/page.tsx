@@ -17,10 +17,20 @@ export const metadata: Metadata = {
     title: siteConfig.title,
     description: siteConfig.description,
     url: '/',
+    images: [
+      {
+        url: '/facebook-cover.jpg',
+        width: 1640,
+        height: 720,
+        alt: siteConfig.title,
+      },
+    ],
   },
   twitter: {
+    card: 'summary_large_image',
     title: siteConfig.title,
     description: siteConfig.description,
+    images: ['/facebook-cover.jpg'],
   },
   alternates: {
     canonical: '/',
