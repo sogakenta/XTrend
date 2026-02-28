@@ -1,6 +1,6 @@
 import 'server-only';
 import { supabase } from './supabase';
-import type { Place, PlaceTrends, TrendItem, TrendItemWithSignals, Term, TermHistory } from './types';
+import type { Place, PlaceTrends, TrendItem, TrendItemWithSignals, Term, TermDescription, TermHistory } from './types';
 
 /**
  * Resolution mode for captured_at lookup
@@ -1107,6 +1107,20 @@ async function getTrendsForAllOffsetsInternal(
   }
 
   return { place, results };
+}
+
+/**
+ * Get term description (auto-generated explanation)
+ */
+export async function getTermDescription(termId: number): Promise<TermDescription | null> {
+  const { data, error } = await supabase
+    .from('term_description')
+    .select('*')
+    .eq('term_id', termId)
+    .maybeSingle();
+
+  if (error || !data) return null;
+  return data as TermDescription;
 }
 
 // ============================================================

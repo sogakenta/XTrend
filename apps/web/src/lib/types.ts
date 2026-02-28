@@ -54,6 +54,13 @@ export interface PlaceTrends {
   trends: TrendItem[];
 }
 
+export interface TermDescription {
+  term_id: number;
+  description: string;
+  source: string;
+  updated_at: string;
+}
+
 export interface TermHistory {
   term: Term;
   history: {
