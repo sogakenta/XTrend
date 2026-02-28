@@ -32,7 +32,7 @@ crontab -e
 ```
 
 ```cron
-0 * * * * /path/to/XTrend/apps/enricher/enrich.sh >> /var/log/enricher.log 2>&1
+5 * * * * /path/to/XTrend/apps/enricher/enrich.sh >> /var/log/enricher.log 2>&1
 ```
 
 ## 動作フロー
