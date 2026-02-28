@@ -1,5 +1,5 @@
 import { notFound } from 'next/navigation';
-import { getTermById, getTermHistory } from '@/lib/data';
+import { getTermById, getTermHistory, getTermDescription } from '@/lib/data';
 import { PositionChart } from '@/components';
 import type { Metadata } from 'next';
 import { siteConfig } from '@/lib/seo';
@@ -80,7 +80,10 @@ export default async function TermPage({ params, searchParams }: PageProps) {
   }
 
   const hours = rangeStr === '7d' ? 168 : 24;
-  const data = await getTermHistory(termId, hours);
+  const [data, termDescription] = await Promise.all([
+    getTermHistory(termId, hours),
+    getTermDescription(termId),
+  ]);
 
   if (!data) {
     notFound();
@@ -141,6 +144,11 @@ export default async function TermPage({ params, searchParams }: PageProps) {
             <strong>X（旧Twitter）トレンド順位の推移</strong>をリアルタイムで追跡・可視化しています。
             地域別のランキング変動をグラフで確認できます。
           </p>
+          {termDescription && (
+            <p className="mt-3 text-base text-zinc-700 dark:text-zinc-300 leading-relaxed">
+              {termDescription.description}
+            </p>
+          )}
           {overallBestRank !== null && (
             <div className="mt-4 flex flex-wrap gap-3">
               <span className="inline-flex items-center px-3 py-1.5 bg-white dark:bg-zinc-800 rounded-full text-sm font-medium text-zinc-900 dark:text-zinc-100 shadow-sm">
